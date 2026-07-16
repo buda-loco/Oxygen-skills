@@ -15,7 +15,7 @@ Below: `▸` = composite (has `defaultChildren`). `slug` is what goes in `node.d
 
 ## Basic / layout
 - Section `EssentialElements\Section` · Container `OxygenElements\Container` · Div `EssentialElements\Div` · Columns `EssentialElements\Columns` + Column `EssentialElements\Column` · Grid `EssentialElements\Grid` · Fancy Container `EssentialElements\FancyContainer`
-- Container Link `OxygenElements\ContainerLink` · Wrapper Link `EssentialElements\WrapperLink`
+- Container Link `OxygenElements\ContainerLink` (wraps `%%CHILDREN%%` in `<a>`; **use this** to wrap any children in a link) · ⚠ Wrapper Link `EssentialElements\WrapperLink` — **AVOID for injection**: its `defaultProperties` advertise `content.content.url`, but that key does NOT render an href (outputs `href="#"`) — a render-keys mismatch (GOTCHAS §wrapper-link-href). ContainerLink reads `content.content.url` correctly.
 
 ## Content
 - Text `OxygenElements\Text` (tag via `settings.advanced.tag`) · Rich Text `OxygenElements\RichText` · Heading `EssentialElements\Heading` · Dual/Animated Heading `EssentialElements\{DualHeading,AnimatedHeading}` · Blockquote `EssentialElements\Blockquote`

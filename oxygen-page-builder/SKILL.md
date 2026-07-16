@@ -58,6 +58,7 @@ oxy_write_tree($id, [                    // wires _parentId/_nextNodeId/status, 
     oxy_rich('<p>…</p>', ['prose']),
     oxy_faq([['q'=>'…','a'=>'<p>…</p>']], ['acme-faq']),
     oxy_button('CTA', '/contact/', ['btn-cta']),        // link gets BOTH type AND url
+    oxy_link('/', [oxy_image($logoId)], ['brand']),     // wrap children in <a> (ContainerLink, not WrapperLink)
   ], ['container']),
 ]);
 ```
@@ -157,7 +158,7 @@ features — for each, use the golden-sample workflow (build once in the real bu
 - **Form hooks** — `breakdance_form_validate_field` filter + the developer Form Actions API, beyond
   the FormBuilder shapes in RECIPES. Official docs: *Forms → Hooks & Actions API*.
 
-## The five deadliest traps (details in GOTCHAS.md)
+## The deadliest traps (details in GOTCHAS.md)
 1. Missing `_nextNodeId`/`status` → builder "IO-TS decoding failed" (verified live; lib prevents).
 2. `.breakdance .woocommerce X` matches NOTHING (both classes sit on `<body>`) — style WC via
    `.bde-*` wrappers + `!important`; verify with `element.matches()`.
@@ -166,3 +167,10 @@ features — for each, use the golden-sample workflow (build once in the real bu
    reference CSS under `.breakdance` + prepend the bde-div reset; STRIP comments before prefixing.
 5. Never save an Oxygen page in the WP block editor (wipes `post_content` to a launcher; guard
    mu-plugin installed, but the rule stands — content belongs in the tree as native elements).
+6. **Wrapping-link = `oxy_link()`/`ContainerLink`, NEVER `WrapperLink`** — WrapperLink outputs
+   `href="#"` (classes still apply, so it looks fine while every link is dead). §wrapper-link-href.
+7. **PhpCode `php_code` must start with `<?php`** or it prints as literal text. §phpcode-open-tag.
+8. A code/`Component` node wraps its output in a block div → breaks a flex/grid PARENT (items go
+   through one wrapper). `display:contents` on the code node, or emit the flex container inside it.
+   §code-node-wrapper. Same shape: RichText wraps content, breaking `p+p`/direct-child CSS
+   (§richtext-wrapper).

@@ -16,6 +16,11 @@ representative examples ship in `scripts/examples/`.)
 | FAQ: border too dark / last item unbordered / padding gone | You fought the element's own CSS vars → §FAQ vars |
 | FAQ renders empty | Data in `questions` only; front-end reads `content.settings.items` → §render keys |
 | Button renders `<button>`, doesn't navigate | `link` missing `type` or `url` — needs BOTH `{type:'url', url:…}` |
+| A link wrapping children renders `href="#"` | Used `EssentialElements\WrapperLink` (its `url` key doesn't render) → use `OxygenElements\ContainerLink` → §wrapper-link-href |
+| PhpCode/HtmlCode prints its source as literal text | `php_code` string didn't start with `<?php` → §phpcode-open-tag |
+| Ported `p + p` / `.x > child` CSS doesn't apply in Oxygen | RichText/Text wraps content in a `.bde-rich-text` div, breaking adjacent/direct-child selectors → §richtext-wrapper |
+| A code/Component node stacks/misaligns inside a flex/grid parent | The node wraps its output in a block div, so the parent lays out ONE wrapper, not the inner items → §code-node-wrapper (fix: `display:contents`) |
+| Reference CSS keyed to an `<html>` class (e.g. `.js`) silently dead | The `.breakdance ` prefixer rewrote it to `.breakdance .js …`, which never matches (`.js` is on `<html>`, body's PARENT) → §html-class-prefix |
 | Accent-filled button inside your outline box | Wrapper classes don't restyle inner atom — target `.bde-button__button` with `!important` |
 | Body copy unreadable (#333 on black) on dark sections | Container recolor only inherits; direct `.prose p{color}` wins → §invert leaf recolor |
 | `.loc-grid` children stack in one column | Gutenberg group has an inner container — grid `.loc-grid > .wp-block-group__inner-container` |
@@ -47,6 +52,65 @@ a tree can render on the front-end yet fail to open in the builder.
 `scripts/validate-tree.php` checks all of this. Final proof is always opening
 `http://example.local?oxygen=builder&id=<ID>` (io-ts runs client-side; nothing server-side can fully prove it).
 
+## §wrapper-link-href — WrapperLink outputs `href="#"` (use ContainerLink)
+To wrap arbitrary children in a link, use **`OxygenElements\ContainerLink`**, NOT
+`EssentialElements\WrapperLink`. ContainerLink's `html.twig` is `%%CHILDREN%%` and its
+render reads href from **`content.content.url`** (string) + target from
+`content.content.open_in_new_tab` (bool → `_blank`/`_self`). WrapperLink's
+`defaultProperties` also advertise `content.content.url`, but that key does NOT render an
+href — the element outputs `href="#"` regardless (a §render-keys mismatch; its true render
+key wasn't locatable — it registers dynamically, no element dir). Symptom is nasty: brand
+CSS classes on the link still apply, so it LOOKS right in screenshots while every link is
+dead. Shape that works (set all three so both render AND the builder link-field populate):
+```php
+oxy_el('OxygenElements\\ContainerLink', ['content'=>['content'=>[
+  'url' => $url,                                 // render reads this → href
+  'link' => ['type'=>'url','url'=>$url],         // builder link control reads this
+  'open_in_new_tab' => $external,                // → target="_blank"
+]]], $children);
+```
+Verify with the RENDERED html (`grep href=`), never by trusting the class list.
+
+## §phpcode-open-tag — PhpCode must start with `<?php`
+`OxygenElements\PhpCode`'s `php_code` is executed as a PHP file: if the string doesn't begin
+with `<?php`, the whole thing is emitted as **literal text** (e.g. a nav printed
+`<a href="%s">` verbatim). Every `php_code` heredoc starts with `<?php` on its own line.
+(HtmlCode is the opposite — raw markup, no tag.)
+
+## §richtext-wrapper — RichText/Text wrap their content in a div
+Every `oxy_rich`/`oxy_text` renders its content INSIDE a wrapper div
+(`.bde-rich-text`, etc.). So ported CSS that assumes **adjacent** or **direct-child**
+relationships between content pieces won't match if you split them across separate nodes:
+- `.body p + p{margin-top}` → put consecutive `<p>` in **ONE** RichText (real adjacent
+  siblings). Separate RichText nodes each nest their `<p>` a level down → rule never matches
+  (symptom: crammed paragraphs).
+- `.row{display:grid} .row > .k / .row > .v` stacking → make `.k`/`.v` **direct children**
+  (two `oxy_text` spans in the parent), not both inside one RichText (symptom: "KV" run
+  together, no gap).
+General rule: if a reference rule relies on element adjacency/child position, mirror that DOM
+shape with native nodes — don't bury it in one RichText.
+
+## §code-node-wrapper — code/Component nodes break a flex/grid parent
+Code (`HtmlCode`/`PhpCode`) and `Component` nodes render their output inside a block
+wrapper div (`.oxy-html-code`, `.oxy-php-code`, the component wrapper). So if the PARENT is
+`display:flex/grid` and expects the inner `<a>`/items as **direct children**, the parent
+lays out the ONE wrapper instead (symptom: nav links or icons stack/misalign; a horizontal
+row goes vertical). Fix: give the code node a class and set **`display:contents`** on it so
+its children rise to become the parent's flex/grid items:
+```css
+.nav-links, .menu-php { display: contents; }   /* wrapper vanishes from layout */
+```
+(Or restructure so the styled flex/grid container is emitted INSIDE the code node.)
+
+## §html-class-prefix — reference CSS keyed to an `<html>` class
+When scoping the reference stylesheet under `.breakdance ` (§bde-div cascade), the prefixer
+must NOT prefix selectors that start at the `<html>` level. A JS flag like `html.js` (common
+for "hide until revealed" patterns) written as `.js …` gets rewritten to `.breakdance .js …`
+— which matches **nothing**, because `.js` is on `<html>`, the PARENT of `body.breakdance`.
+Same root cause as §comment-strip's `:root` failure. Fix: write such rules starting with
+`html` (e.g. `html.js :is(...)`) so the prefixer's `^(html|body|:root|\*)` skip leaves them
+intact; or put the flag class on `<body>` instead of `<html>`.
+
 ## §eval-file scope
 `wp eval-file` runs the script body inside a FUNCTION scope: top-level `$vars` are not global, so
 `global $x` in a helper silently yields empty (this emptied node ids and class uuids twice).
@@ -56,6 +120,13 @@ Use `static` registries — `scripts/lib.php` (`oxy_nid()`, `oxy_uuid()`) alread
 `global-settings.css` has a direct `h1..h6{color;font-size}` rule. A RichText renders `<h1>` inside
 a wrapper `<div>`; a class on the wrapper only *inherits*, and the direct tag rule wins. Use
 `OxygenElements\Text` + `settings.advanced.tag: h1` so the class lands ON the `<h1>` (0,1,0 beats 0,0,1).
+
+**Per-section heading COLOUR:** Global Settings emits `h1..h6{color:var(--bde-headings-color)}` at
+(0,0,1) — a direct tag rule that beats a section container's inherited colour. If a design inverts
+headings per section (light-on-dark hero/CTA vs dark-on-light body), a FIXED headings colour makes
+some headings invisible (e.g. ink-on-ink). Set the Global Settings headings colour to **`inherit`**
+(`settings.colors.headings = 'inherit'` → `--bde-headings-color: inherit`) so each heading takes its
+section container's colour, restoring the reference stylesheet's model.
 
 **Heading rhythm:** reference `base.css` gives headings bottom margin only. Ported prose reads crammed:
 add `.prose h2{margin-top:var(--sp-10)}` / `h3{--sp-8}` / `h4{--sp-6}` + `.prose>*:first-child{margin-top:0}`.

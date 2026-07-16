@@ -83,6 +83,24 @@ function oxy_button(string $text, string $url, array $classes = []): array {
 }
 
 /**
+ * Link wrapping arbitrary children in an <a> (logo→home, image cards, icon links…).
+ * Uses OxygenElements\ContainerLink: href renders from content.content.url, target from
+ * open_in_new_tab; the `link` object is set too so the builder link-field populates.
+ * ⚠ Do NOT use EssentialElements\WrapperLink — its url key does NOT render an href
+ * (outputs href="#" while the classes still apply, so it looks fine but every link is
+ * dead). See GOTCHAS.md §wrapper-link-href.
+ */
+function oxy_link(string $url, array $children, array $classes = [], bool $newTab = false): array {
+    $p = ['content' => ['content' => [
+        'url' => $url,
+        'link' => ['type' => 'url', 'url' => $url],
+        'open_in_new_tab' => $newTab,
+    ]]];
+    if ($classes) { $p['settings']['advanced']['classes'] = array_values($classes); }
+    return oxy_el('OxygenElements\\ContainerLink', $p, $children);
+}
+
+/**
  * FAQ accordion. $qas = [['q' => 'Question?', 'a' => '<p>Answer html</p>'], ...].
  * Renders from content.settings.items; `questions` is mirrored for the builder control.
  * Style via the element's CSS vars on your wrapper class (--faqBorderColor/--faqBorderWidth/
