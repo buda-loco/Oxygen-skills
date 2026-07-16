@@ -237,6 +237,13 @@ token start with `/`, defeating the `html/body/:root/*` skip; `:root` becomes `.
 the whole stylesheet. Skip prefixing when the trimmed selector starts with `:` or `*` or matches `^(html|body)\b`.
 Note `.breakdance-form-*` selectors contain the substring `.breakdance`, so the prefixer leaves them
 alone — scope form styling under your own wrapper class for specificity instead.
+Two more prefixer rules (burned 2026-07-17):
+- Split selector lists on TOP-LEVEL commas only (track paren depth) — a naive `split(',')`
+  prefixes the INSIDE of `:where(h1, h2, …)` / `:is(…)`, silently changing the rule.
+- Base TAG rules (`h1{}`, `p{}`, `a{}`) prefix to `.breakdance h1` (0,1,1) which BEATS class
+  selectors (0,1,0) — panel typography knobs silently no-op ("changed the weight, nothing
+  happened"). Write base type as `:where(.breakdance) :where(h1,h2,h3,h4), html :where(…)`
+  (0,0,0; the `:`-prefix skip leaves it verbatim) so classes and element edits always win.
 
 ## §FAQ vars — tune, don't fight
 Every `.bde-faq__item` gets a FULL border (`--faqBorderColor` #000, `--faqBorderWidth` 2px) and items
