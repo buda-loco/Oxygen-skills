@@ -55,6 +55,20 @@ function oxy_text(string $text, ?string $tag = null, array $classes = [], array 
     return oxy_el('OxygenElements\\Text', $p);
 }
 
+/**
+ * Real heading (EssentialElements\Heading): text at content.content.text, level at
+ * content.content.tags ('h1'..'h6'). Use THIS for headings — oxy_text with
+ * settings.advanced.tag='h1' renders the same front-end markup, but the builder
+ * labels the node "Text" and shows Text controls, which reads as a bug to anyone
+ * editing (no heading-level selector, wrong typography panel).
+ */
+function oxy_heading(string $text, string $level = 'h2', array $classes = [], array $selectorUuids = []): array {
+    $p = ['content' => ['content' => ['text' => $text, 'tags' => $level]]];
+    if ($classes)       { $p['settings']['advanced']['classes'] = array_values($classes); }
+    if ($selectorUuids) { $p['meta']['classes'] = array_values($selectorUuids); }
+    return oxy_el('EssentialElements\\Heading', $p);
+}
+
 /** RichText for paragraphs/lists (HTML string). Do NOT put headings you want to restyle in here. */
 function oxy_rich(string $html, array $classes = [], array $selectorUuids = []): array {
     $p = ['content' => ['content' => ['text' => $html]]];
@@ -164,6 +178,32 @@ function oxy_image(int $attachmentId, string $size = 'full', array $classes = []
     if (!empty($opts['fetchpriority'])) { $attrs[] = ['name' => 'fetchpriority', 'value' => $opts['fetchpriority']]; }
     if ($attrs) { $p['settings']['advanced']['attributes'] = $attrs; }
     return oxy_el('OxygenElements\\Image', $p);
+}
+
+/**
+ * Self-hosted video (OxygenElements\Html5Video) — defaults to a muted autoplay
+ * background loop. The element has NO poster control, but <video> is its root
+ * tag, so a custom attribute lands on it (verified; same mechanism as
+ * width/height on Image). A poster paints before the video buffers and stays
+ * up for prefers-reduced-motion visitors whose video never plays.
+ *
+ * $opts: autoplay/loop/muted/plays_inline/controls (bools, defaults suit a
+ *        background loop) | poster (URL string).
+ */
+function oxy_video(string $url, int $attachmentId = 0, array $opts = []): array {
+    $vf = $attachmentId ? ['id' => $attachmentId, 'url' => $url] : ['url' => $url];
+    $p = ['content' => ['content' => [
+        'video_file_url' => $vf,
+        'autoplay'     => $opts['autoplay']     ?? true,
+        'loop'         => $opts['loop']         ?? true,
+        'muted'        => $opts['muted']        ?? true,
+        'plays_inline' => $opts['plays_inline'] ?? true,
+        'controls'     => $opts['controls']     ?? false,
+    ]]];
+    if (!empty($opts['poster'])) {
+        $p['settings']['advanced']['attributes'] = [['name' => 'poster', 'value' => $opts['poster']]];
+    }
+    return oxy_el('OxygenElements\\Html5Video', $p);
 }
 
 /** Code elements (escape hatches — prefer native elements; see skill rules). */

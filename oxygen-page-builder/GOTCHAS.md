@@ -33,6 +33,10 @@ representative examples ship in `scripts/examples/`.)
 | Slide background image tiny/repeating | It renders on inner `.advanced-slider__slide` (744px default), not `.bde-advancedslide` → RECIPES.md §slider |
 | Store shows "Coming Soon" placeholder | WooCommerce 10.x ships it ON → `update_option('woocommerce_coming_soon','no')` |
 | Imported menu links point at the old domain | WXR keeps source URLs → `wp search-replace 'old.local' 'new.local' --all-tables` |
+| Template's CSS stale after `oxy_write_tree` (tree meta verified new, `?v=` hash unchanged) | Page regen doesn't compile template CSS — `generateCacheForPost($templateId)` too → §template-cache |
+| Site has no images/CSS through an https tunnel (Live Links/ngrok) | Trees store absolute `http://` URLs; proxy rewrites host not scheme → §absolute-urls (mind both traps) |
+| Scripted `<img>` ships bare full-size src, no srcset | Renderer prints pre-computed `media.attributes.srcset|sizes` strings the builder UI normally fills → §image-srcset |
+| A heading shows up in the builder as "Text" with the wrong controls/preview styles | Built as Text + `settings.advanced.tag='h1'` (renders identical front-end markup!) → use `EssentialElements\Heading` (`content.content.text` + `content.content.tags`) — `oxy_heading()` in lib.php |
 
 ---
 
@@ -101,6 +105,11 @@ its children rise to become the parent's flex/grid items:
 .nav-links, .menu-php { display: contents; }   /* wrapper vanishes from layout */
 ```
 (Or restructure so the styled flex/grid container is emitted INSIDE the code node.)
+
+Subtler variant (2026-07-16): an inline `<svg>` icon inside an HtmlCode node, centred by
+the parent's `place-items:center` circle, sits ABOVE centre — the grid centres the wrapper
+div, while the svg inside it rides the text baseline (line-height space below). Fix both
+levels: `display:contents` on the wrapper AND `display:block` on the svg.
 
 ## §html-class-prefix — reference CSS keyed to an `<html>` class
 When scoping the reference stylesheet under `.breakdance ` (§bde-div cascade), the prefixer
@@ -366,3 +375,34 @@ renders a bare full-size `src` (a "looks fine, weighs 7 MB" page). Populate them
   `width`/`height` (CLS) and `fetchpriority: high` work as custom attributes.
 - `src` comes from `media.sizes[size].url` — if you set `size` to anything but `full`, you must also
   provide that key in the `media.sizes` map.
+
+## §template-cache — a template's compiled CSS needs its OWN cache regen (2026-07-16)
+`generateCacheForPost()` on the PAGES does not refresh CSS compiled from a header/footer
+TEMPLATE's tree. After `oxy_write_tree()` on a template — especially one carrying the
+reference-CSS CssCode node (§bde-div cascade) — call `generateCacheForPost($templateId)`
+too, or `post-<template>.css` on disk stays stale while the tree meta is already new.
+Symptom that burned an hour: tree verified updated (walked the meta, new CSS present),
+front end kept serving the old rules with an unchanged `?v=` hash. Regen loop for a
+site is pages AND templates: `foreach([...pages, header, footer] as $id) generateCacheForPost($id)`.
+
+## §absolute-urls — trees store scheme-frozen absolute URLs; TLS tunnels break (2026-07-16)
+Everything scripted into trees is an ABSOLUTE http:// URL frozen at build time: image
+src, the §image-srcset attribute strings, video src, link fields. Any TLS-terminating
+preview proxy (Local's Live Links, ngrok, a CDN in front of staging) then serves an https
+page whose subresources are http → the browser blocks ALL of them as mixed content
+("site loads with no images/CSS through the tunnel").
+
+Two traps in the fix, both verified the hard way:
+1. An unconditional `<meta http-equiv="Content-Security-Policy"
+   content="upgrade-insecure-requests">` is NOT a no-op on plain http — browsers apply
+   it there too, upgrading every subresource to `https://<local-domain>`, whose
+   self-signed cert is rejected (`ERR_CERT_AUTHORITY_INVALID`). It breaks the local site.
+2. Server-side `is_ssl()` gating alone can't be trusted: Live Links rewrites the response
+   BODY (host), not the request headers, so tunnel requests can look like plain local
+   http to WP.
+
+Robust shape (wp_head, priority 0): if `is_ssl()` emit the meta; otherwise emit a tiny
+inline script that checks `location.protocol` IN THE BROWSER (always knows the real
+scheme) and `document.head.prepend()`s the same meta before any stylesheet/image request
+— inert on plain http. Optionally also honour `X-Forwarded-Proto` in wp-config so
+canonicals/og:url are right when the proxy IS visible.
