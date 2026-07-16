@@ -120,19 +120,49 @@ function oxy_faq(array $qas, array $classes = [], bool $accordion = true, bool $
  * Image from the media library. Path is content.image.* (NOT content.content.*) — from the
  * element's contentControls: from, media (wpmedia object), size, alt (enum: from_media_library|
  * custom|decorative; custom text goes in custom_alt), lazy_load. External image: from='url' + url.
+ *
+ * srcset/sizes are NOT computed at render time: the element's attributes() template prints the
+ * PRE-COMPUTED strings at content.image.media.attributes.srcset / .sizes verbatim (the builder UI
+ * fills them when an image is picked; scripted trees must do it themselves or the img ships the
+ * bare full-size src). This helper populates them via wp_get_attachment_image_srcset()/_sizes().
+ *
+ * $opts:
+ *   lazy          bool   default true. false OMITS the loading attr entirely (eager) — use for
+ *                        the LCP/hero image, usually together with fetchpriority => 'high'.
+ *   sizes         string override for the sizes attribute (e.g. '100vw', '(min-width: 60rem)
+ *                        30rem, 92vw'). Default: WP's '(max-width: Npx) 100vw, Npx'.
+ *   fetchpriority string 'high'|'low' — rendered via settings.advanced.attributes (custom
+ *                        attributes DO land on the <img>, it is the element's root tag).
+ *   dims          bool   default true: emit width/height attributes of the chosen $size (CLS).
  */
-function oxy_image(int $attachmentId, string $size = 'full', array $classes = [], ?string $customAlt = null): array {
+function oxy_image(int $attachmentId, string $size = 'full', array $classes = [], ?string $customAlt = null, array $opts = []): array {
     $url = wp_get_attachment_url($attachmentId) ?: '';
+    $w = $h = 0; $sizeUrl = $url;
+    if ($src = wp_get_attachment_image_src($attachmentId, $size)) { [$sizeUrl, $w, $h] = $src; }
     $img = [
         'from'      => 'media_library',
-        'media'     => ['id' => $attachmentId, 'url' => $url, 'sizes' => ['full' => ['url' => $url]]],
+        'media'     => ['id' => $attachmentId, 'url' => $url,
+                        'sizes' => ['full' => ['url' => $url], $size => ['url' => $sizeUrl]]],
         'size'      => $size,
         'alt'       => $customAlt !== null ? 'custom' : 'from_media_library',
-        'lazy_load' => true,
+        'lazy_load' => $opts['lazy'] ?? true,
     ];
+    if ($srcset = wp_get_attachment_image_srcset($attachmentId, $size)) {
+        $img['media']['attributes'] = [
+            'srcset' => $srcset,
+            'sizes'  => $opts['sizes'] ?? (wp_get_attachment_image_sizes($attachmentId, $size) ?: ''),
+        ];
+    }
     if ($customAlt !== null) { $img['custom_alt'] = $customAlt; }
     $p = ['content' => ['image' => $img]];
     if ($classes) { $p['settings']['advanced']['classes'] = array_values($classes); }
+    $attrs = [];
+    if (($opts['dims'] ?? true) && $w && $h) {
+        $attrs[] = ['name' => 'width',  'value' => (string) $w];
+        $attrs[] = ['name' => 'height', 'value' => (string) $h];
+    }
+    if (!empty($opts['fetchpriority'])) { $attrs[] = ['name' => 'fetchpriority', 'value' => $opts['fetchpriority']]; }
+    if ($attrs) { $p['settings']['advanced']['attributes'] = $attrs; }
     return oxy_el('OxygenElements\\Image', $p);
 }
 

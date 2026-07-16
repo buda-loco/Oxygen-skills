@@ -353,3 +353,16 @@ end-of-root = bottom of page). **Seed `oxy_nid(oxy_max_id_r($tree['root']))` fir
 id collides with existing ones ("duplicate node id 100"). A Global Block may itself contain a
 `PostsLoop` that references ANOTHER Global Block (e.g. block #646 → loop → post-card #628); this
 2-level nesting renders fine. Idempotency: skip if a Component with that `componentId` already exists.
+
+## §image-srcset — scripted Image elements ship NO srcset (2026-07-16)
+The Image element's `attributes()` template does not call WP at render time — it prints the
+**pre-computed strings** `content.image.media.attributes.srcset` and `.sizes` verbatim. The builder
+UI populates them when a user picks an image; a scripted tree that only sets `media = {id,url,sizes}`
+renders a bare full-size `src` (a "looks fine, weighs 7 MB" page). Populate them yourself:
+`wp_get_attachment_image_srcset($id, $size)` / `wp_get_attachment_image_sizes($id, $size)` — or use
+`oxy_image(..., opts: ['sizes' => '…'])` in lib.php, which now does this. Related facts, verified:
+- `lazy_load: false` OMITS the `loading` attribute entirely → eager. Use for the LCP hero image.
+- `settings.advanced.attributes` land on the `<img>` tag itself (it's the element's root), so
+  `width`/`height` (CLS) and `fetchpriority: high` work as custom attributes.
+- `src` comes from `media.sizes[size].url` — if you set `size` to anything but `full`, you must also
+  provide that key in the `media.sizes` map.
