@@ -153,10 +153,17 @@ function oxy_image(int $attachmentId, string $size = 'full', array $classes = []
     $url = wp_get_attachment_url($attachmentId) ?: '';
     $w = $h = 0; $sizeUrl = $url;
     if ($src = wp_get_attachment_image_src($attachmentId, $size)) { [$sizeUrl, $w, $h] = $src; }
+    // media must be the FULL wp.media attachment JSON (what the builder's control
+    // writes when a user picks an image). A minimal {id,url,sizes} RENDERS fine but
+    // the builder's Media control shows EMPTY ("Choose") and the canvas draws a
+    // placeholder — it looks like the image was deleted. wp_prepare_attachment_for_js
+    // is the canonical producer of that shape.
+    $media = wp_prepare_attachment_for_js($attachmentId)
+        ?: ['id' => $attachmentId, 'url' => $url, 'sizes' => ['full' => ['url' => $url]]];
+    if (empty($media['sizes'][$size]['url'])) { $media['sizes'][$size] = ['url' => $sizeUrl, 'width' => $w, 'height' => $h]; }
     $img = [
         'from'      => 'media_library',
-        'media'     => ['id' => $attachmentId, 'url' => $url,
-                        'sizes' => ['full' => ['url' => $url], $size => ['url' => $sizeUrl]]],
+        'media'     => $media,
         'size'      => $size,
         'alt'       => $customAlt !== null ? 'custom' : 'from_media_library',
         'lazy_load' => $opts['lazy'] ?? true,
@@ -207,10 +214,15 @@ function oxy_video(string $url, int $attachmentId = 0, array $opts = []): array 
 }
 
 /** Code elements (escape hatches — prefer native elements; see skill rules). */
-function oxy_css(string $css): array  { return oxy_el('OxygenElements\\CssCode', ['content' => ['content' => ['css_code' => $css]]]); }
-function oxy_js(string $js): array    { return oxy_el('OxygenElements\\JavaScriptCode', ['content' => ['content' => ['javascript_code' => $js]]]); }
-function oxy_html(string $html): array{ return oxy_el('OxygenElements\\HtmlCode', ['content' => ['content' => ['html_code' => $html]]]); }
-function oxy_php(string $php): array  { return oxy_el('OxygenElements\\PhpCode', ['content' => ['content' => ['php_code' => $php]]]); }
+function oxy_code_el(string $type, string $key, string $code, array $classes = []): array {
+    $p = ['content' => ['content' => [$key => $code]]];
+    if ($classes) { $p['settings']['advanced']['classes'] = array_values($classes); }
+    return oxy_el($type, $p);
+}
+function oxy_css(string $css, array $classes = []): array  { return oxy_code_el('OxygenElements\\CssCode', 'css_code', $css, $classes); }
+function oxy_js(string $js, array $classes = []): array    { return oxy_code_el('OxygenElements\\JavaScriptCode', 'javascript_code', $js, $classes); }
+function oxy_html(string $html, array $classes = []): array{ return oxy_code_el('OxygenElements\\HtmlCode', 'html_code', $html, $classes); }
+function oxy_php(string $php, array $classes = []): array  { return oxy_code_el('OxygenElements\\PhpCode', 'php_code', $php, $classes); }
 
 // ---------------------------------------------------------------------------
 // golden shapes (never hand-guess a complex element)
@@ -412,17 +424,74 @@ function oxy_selector(string $name, array $groups): array {
             'properties' => ['breakpoint_base' => $groups]];
 }
 
+/** Read the saved selectors, normalizing the store shape: saveSelectors() ACCEPTS
+ *  {selectors:[...],collections:[...]} but PERSISTS the bare selectors ARRAY (flat,
+ *  verified 6.1.0) — readers must handle both. */
+function oxy_read_selectors(): array {
+    $d = json_decode((string) get_option('oxygen_oxy_selectors_json_string'), true) ?: [];
+    if (isset($d['selectors']) && is_array($d['selectors'])) {
+        return ['selectors' => $d['selectors'], 'collections' => $d['collections'] ?? ['Default']];
+    }
+    return ['selectors' => array_values(array_filter($d, 'is_array')), 'collections' => ['Default']];
+}
+
+/**
+ * Walk a node array and PROMOTE any plain class (settings.advanced.classes) whose
+ * name is a registered selector into meta.classes (uuid) — so the builder shows the
+ * class in the class field with its design panel active. Non-selector classes stay
+ * plain. Run AFTER the selectors script has registered names. Use on the root
+ * children array right before oxy_write_tree().
+ */
+function oxy_promote_classes_to_selectors(array $nodes): array {
+    $map = [];
+    foreach (oxy_read_selectors()['selectors'] as $s) { $map[$s['name'] ?? ''] = $s['id'] ?? ''; }
+    $walk = function (array $n) use (&$walk, $map): array {
+        $classes = $n['data']['properties']['settings']['advanced']['classes'] ?? [];
+        if ($classes) {
+            $plain = []; $uuids = $n['data']['properties']['meta']['classes'] ?? [];
+            foreach ($classes as $c) {
+                if (!empty($map[$c])) { $uuids[] = $map[$c]; }
+                else                  { $plain[] = $c; }
+            }
+            if ($plain) { $n['data']['properties']['settings']['advanced']['classes'] = array_values($plain); }
+            else        { unset($n['data']['properties']['settings']['advanced']['classes']); }
+            if ($uuids) { $n['data']['properties']['meta']['classes'] = array_values(array_unique($uuids)); }
+        }
+        $n['children'] = array_map($walk, $n['children'] ?? []);
+        return $n;
+    };
+    return array_map($walk, $nodes);
+}
+
+/** Uuid of a SAVED selector by name (cross-process stable — reads the option store).
+ *  Use this in build scripts to attach selectors via meta.classes; throws if the
+ *  selector hasn't been registered yet (run the selectors script first). */
+function oxy_selector_uuid(string $name): string {
+    static $map = null;
+    if ($map === null) {
+        $map = [];
+        foreach (oxy_read_selectors()['selectors'] as $s) { $map[$s['name'] ?? ''] = $s['id'] ?? ''; }
+    }
+    if (empty($map[$name])) { throw new RuntimeException("selector not registered: $name"); }
+    return $map[$name];
+}
+
 /**
  * MERGE new selectors into the saved set (replaces same-name entries) and recompile.
  * Follow with generateCacheForPost($pageId) for each affected page.
  */
 function oxy_save_selectors(array $newSelectors): void {
-    $cur = json_decode((string) get_option('oxygen_oxy_selectors_json_string'), true) ?: [];
-    $selectors = $cur['selectors'] ?? [];
+    $cur = oxy_read_selectors();
+    $selectors = $cur['selectors'];
     $byName = [];
     foreach ($selectors as $i => $s) { $byName[$s['name'] ?? ''] = $i; }
     foreach ($newSelectors as $s) {
-        if (isset($byName[$s['name']])) { $selectors[$byName[$s['name']]] = $s; }
+        if (isset($byName[$s['name']])) {
+            // keep the STORED uuid: trees reference selectors by id via meta.classes,
+            // so a re-run must never mint a new id for an existing name.
+            $s['id'] = $selectors[$byName[$s['name']]]['id'] ?? $s['id'];
+            $selectors[$byName[$s['name']]] = $s;
+        }
         else                            { $selectors[] = $s; }
     }
     \Breakdance\BreakdanceOxygen\Selectors\saveSelectors(

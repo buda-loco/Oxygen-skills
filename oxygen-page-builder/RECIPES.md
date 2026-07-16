@@ -75,8 +75,11 @@ Slider behavior check on the front-end console: `Object.values(window.swiperInst
 
 ## Embedding a full reference stylesheet (faithful 1:1 recreation, "strategy B")
 Build native DOM with `Div`/`Text` (+ `settings.advanced.classes` plain names) mirroring the reference
-markup; drop the reference CSS into ONE `CssCode` node and JS into ONE `JavaScriptCode` node in a
-GLOBAL template (we use footer #15) so they apply site-wide.
+markup; drop the reference CSS into ONE `CssCode` node in the **HEADER template** and JS into ONE
+`JavaScriptCode` node in a global template, so they apply site-wide. The header (not the footer!) is
+the one slot whose compiled CSS loads after the engine reset but BEFORE the page CSS — so the
+reference rules win the engine while builder edits still win the reference rules
+(GOTCHAS.md §bde-div cascade, corrected 2026-07-16).
 - **Use `Div`, not `Section`** — Section injects `.section-container` (own max-width/padding/align)
   that fights reference CSS. Page root can hold Divs directly (inside `<main>`).
 - Prefixing pipeline (MANDATORY, in order): strip CSS comments → prefix every selector with

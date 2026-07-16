@@ -20,7 +20,7 @@ render on the front-end yet fail to open in the builder. Never guess shapes — 
 1. **Everything on-brand.** No element ships with its default look — after adding ANY element
    (native, WC, plugin markup), add brand CSS for its rendered classes (example brand: accent `#0f766e`,
    ink `#1f2937`, Oswald uppercase headings), scoped per GOTCHAS.md rules, in
-   the global stylesheet (a CssCode node in your footer template → `post-<id>.css`) or a page-local
+   the global stylesheet (a CssCode node in your HEADER template → `post-<id>.css`; header, not footer — see GOTCHAS §bde-div cascade) or a page-local
    CssCode node.
 2. **Native, individually-editable elements over code elements.** The goal is USER-EDITABILITY:
    every content piece must be a component the user can click and change in the builder — one
@@ -74,7 +74,7 @@ function-scoped, `global` silently fails).
 ## Workflow for any build
 1. Write the tree with lib.php (or copy a `scripts/examples/` pattern). Unknown shape? `oxy_golden()`,
    or build once in the real builder + read `_oxygen_data` back.
-2. Brand-style every new class (rule 1). Where CSS lives: global = footer #15's CssCode node
+2. Brand-style every new class (rule 1). Where CSS lives: global = the HEADER template's CssCode node (loads after the engine reset, before page CSS → builder edits still win)
    (preserve it when rebuilding #15!); page-local = an `oxy_css()` node on the page.
 3. Verify — all three, every time:
    - `scripts/wp-eval.sh scripts/validate-tree.php <id> fetch` (io-ts invariants + trap checks + front-end 200)
@@ -91,7 +91,7 @@ small, auditable, and idempotent.
 **CSS ladder (top = do first):**
 1. **Global Settings** — palette swatches, heading/body fonts, container width. One write, every
    picker and element inherits it.
-2. **Global stylesheet** (ONE CssCode node in a site-wide template, e.g. the footer) — `:root`
+2. **Global stylesheet** (ONE CssCode node in the HEADER template — after the engine reset, before page CSS, so builder edits win) — `:root`
    design tokens (`--c-*`), base element classes (`.container`, `.section`, `.btn`, `.prose`),
    and brand overrides for third-party markup (WooCommerce). Grow it only via MARKED, idempotent
    blocks (RECIPES §node surgery).
@@ -122,6 +122,14 @@ small, auditable, and idempotent.
   reference CSS in the global CssCode node (comment-strip + `.breakdance`-prefix + `.bde-div` reset
   — GOTCHAS.md). Pixel-faithful; structure stays editable. This is how the original production site
   was built, porting an existing theme's stylesheet into Oxygen.
+- **Hybrid (recommended endpoint, verified 2026-07-17)** — EVERY element carries a BEM class;
+  the class is a registered SELECTOR holding the PAINT props (typography/colors/backgrounds/
+  spacing/borders/effects — panel-editable, tokens pass through verbatim), while STRUCTURAL css
+  (layout/position/media/pseudo/keyframes) stays in the reference stylesheet — it physically
+  cannot live on selectors (engine reset at 0,2,0 vs selectors at 0,1,0; GOTCHAS §selector-cascade).
+  Register selectors FIRST, then build trees through `oxy_promote_classes_to_selectors()` so class
+  names attach as meta.classes uuids. Rule: an element without a class gives the user no
+  design-panel handle — never ship one.
 
 ## Where to look
 | Need | File |

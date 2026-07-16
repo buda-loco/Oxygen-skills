@@ -37,6 +37,10 @@ representative examples ship in `scripts/examples/`.)
 | Site has no images/CSS through an https tunnel (Live Links/ngrok) | Trees store absolute `http://` URLs; proxy rewrites host not scheme → §absolute-urls (mind both traps) |
 | Scripted `<img>` ships bare full-size src, no srcset | Renderer prints pre-computed `media.attributes.srcset|sizes` strings the builder UI normally fills → §image-srcset |
 | A heading shows up in the builder as "Text" with the wrong controls/preview styles | Built as Text + `settings.advanced.tag='h1'` (renders identical front-end markup!) → use `EssentialElements\Heading` (`content.content.text` + `content.content.tags`) — `oxy_heading()` in lib.php |
+| Selector merge re-runs orphan every meta.classes reference / promotion attaches nothing | `saveSelectors()` persists a FLAT array, not the `{selectors:[…]}` wrapper it accepts — readers expecting the wrapper see an empty store → §selector-store |
+| Panel edits on a class do nothing; class layout collapses | Selectors compile UNPREFIXED (0,1,0) into `oxy-selectors.css`, losing to the engine reset and the reference sheet → paint-on-selectors, layout-on-elements/stylesheet split → §selector-cascade |
+| Whole sections invisible in the builder canvas (front end fine) | JS-gated reveal CSS hides them; the observer never fires in the canvas iframe → skip the gate + behaviour JS when `?breakdance_iframe=1` → §canvas-reveal |
+| Image element shows empty "Choose" in the builder (renders fine on front end) | Scripted media object too minimal — control needs full `wp_prepare_attachment_for_js()` JSON → §image-media-shape |
 
 ---
 
@@ -206,10 +210,25 @@ that "looks empty/broken" in a full-page shot with a **viewport** screenshot (sc
 Engine ships `.breakdance .bde-div{display:flex;flex-direction:column;align-items:flex-start;text-align:left;max-width:100%}`
 at specificity 0,2,0. Every Div gets `.bde-div`, so this beats your single-class reference rules
 (0,1,0) and collapses grids/flex into left-aligned stacks. Fix (both parts):
-1. Scope the ENTIRE reference stylesheet under `.breakdance ` (equal 0,2,0 + loads later in
-   `post-15.css` = wins). Leave `html/body/:root/*` rules unprefixed; prefix inside `@media`;
+1. Scope the ENTIRE reference stylesheet under `.breakdance ` (equal 0,2,0 + loads later = wins).
+   Leave `html/body/:root/*` rules unprefixed; prefix inside `@media`;
    leave `@keyframes`/`@font-face` bodies verbatim.
 2. Prepend a reset FIRST: `.breakdance .bde-div{display:block;flex-direction:row;align-items:normal;justify-content:normal;text-align:inherit}`.
+
+**Where the CssCode node goes: the HEADER template, not the footer** (corrected 2026-07-16).
+The engine reset lives in the `post-*-defaults.css` files, and ALL `-defaults.css` load before
+ALL non-default CSS. Non-default order is header → page → footer:
+```
+post-*-defaults.css      engine reset (0,2,0)
+global-settings.css
+post-<header>.css        ← reference stylesheet: after the reset → wins the tie
+post-<page>.css          ← BUILDER EDITS: after the reference CSS → the user wins
+post-<footer>.css
+```
+In the footer the stylesheet also beats the reset — but it beats the PAGE css too, so every
+style a user sets in the builder silently loses the 0,2,0 tie (verified: a hero font-weight
+change saved+compiled correctly into post-<page>.css yet stayed invisible — reads exactly
+like "is there a cache?"). The header slot satisfies both constraints.
 
 ## §comment-strip (prefixing killer)
 **STRIP all CSS comments BEFORE prefixing.** A `/* label */` glued in front of a selector makes the
@@ -406,3 +425,56 @@ inline script that checks `location.protocol` IN THE BROWSER (always knows the r
 scheme) and `document.head.prepend()`s the same meta before any stylesheet/image request
 — inert on plain http. Optionally also honour `X-Forwarded-Proto` in wp-config so
 canonicals/og:url are right when the proxy IS visible.
+
+## §selector-store — saveSelectors persists a FLAT array, not the wrapper it accepts (2026-07-17)
+`\Breakdance\BreakdanceOxygen\Selectors\saveSelectors()` ACCEPTS
+`json_encode(['selectors'=>[...],'collections'=>[...]])` but PERSISTS option
+`oxygen_oxy_selectors_json_string` as the bare selectors ARRAY (verified 6.1.0). Any reader
+expecting `$decoded['selectors']` gets null → merge-by-name starts from "empty" (minting NEW
+uuids that orphan every `meta.classes` reference), and class-promotion silently attaches
+nothing while the DOM still LOOKS right (plain classes render identically). Use lib.php's
+`oxy_read_selectors()` (normalizes both shapes) and verify promotion by walking the tree for
+meta.classes uuids — never by grepping the rendered class attribute.
+
+## §selector-cascade — classes carry PAINT; layout physically cannot live on selectors (2026-07-17)
+Selectors compile UNPREFIXED into `uploads/oxygen/css/oxy-selectors.css` at specificity
+0,1,0, loading after global-settings.css and BEFORE the header-template reference CSS and
+page CSS. Consequences, all verified:
+- The engine reset `.breakdance .bde-div{display:flex;…}` (0,2,0, in every -defaults.css)
+  BEATS any selector's display/flex/grid/text-align/max-width on a Div. This is Breakdance's
+  own model: layout belongs to elements (0,2,0 in post-<page>.css, loads last), shared paint
+  belongs to classes. Don't fight it.
+- The element panel's layout_v2 grid is uniform `repeat(N,1fr)` only — art-directed span
+  grids can't move there either. Structural CSS stays in the reference stylesheet.
+- The workable split (BEM migration, this build): typography/colors/backgrounds/
+  padding/margin/borders/shadows/transitions → selectors (panel-editable; var()/clamp()/
+  color-mix() pass through verbatim via {"number":0,"unit":"custom","style":"<css>"}); 
+  display/grid/position/size/media-queries/pseudo/hover/keyframes → reference stylesheet.
+- MIGRATED declarations must be REMOVED from the reference sheet (it loads later and wins
+  ties, making panel edits silently no-op — the same class of bug as §bde-div cascade's
+  footer-vs-header ordering).
+- Descendant rules (`.cta p`, `.shot img`) hide styling from the panel AND outrank selectors
+  (0,2,1) — dissolve them: BEM class on the child + rule rewritten to the class.
+- Every element gets a class (BEM). An element with no class has no design-panel handle a
+  user can find. lib.php: `oxy_selector()`, `oxy_save_selectors()` (uuid-preserving merge),
+  `oxy_selector_uuid()`, `oxy_promote_classes_to_selectors()` (move plain names → meta.classes
+  after registration; run selectors script BEFORE tree builds).
+
+## §canvas-reveal — scroll-reveal systems make sections LOOK deleted in the builder (2026-07-17)
+A JS-gated reveal pattern (`html.js .x{opacity:0}` + IntersectionObserver) hides whole
+sections in the builder canvas: the gate script runs (it's in wp_head) but the observer
+never fires inside the canvas iframe, so about/work/section-heads sit at opacity:0 while
+excluded elements (cards, marquees, footer) render — it reads as "the builder ate my
+sections". Canvas requests carry `?breakdance_iframe=1` (`isRequestFromBuilderIframe()`).
+Fix in the site plugin: when that param is present, DON'T print the `html.js` gate and
+DON'T enqueue the behaviour JS (drag rails/marquee cloning would fight builder selection
+anyway). Front end untouched.
+
+## §image-media-shape — the builder's Media control needs the FULL wp.media JSON (2026-07-17)
+A minimal `media = {id,url,sizes:{full:{url}}}` renders perfectly on the front end, but the
+builder's Image control shows an EMPTY "Choose" state and the canvas draws a placeholder —
+it looks like the image was deleted. The control expects the attachment JSON the picker
+itself writes. Producer: `wp_prepare_attachment_for_js($id)` (id/title/filename/url/alt/
+sizes{thumbnail,medium,large,…} …). lib.php's `oxy_image()` now builds media this way and
+overlays `media.attributes.srcset|sizes` (§image-srcset) on top. Symptom family reminder:
+front-end-renders-fine ≠ builder-works — ALWAYS eyeball the builder after scripting trees.
