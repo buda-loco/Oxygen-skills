@@ -41,6 +41,9 @@ representative examples ship in `scripts/examples/`.)
 | Panel edits on a class do nothing; class layout collapses | Selectors compile UNPREFIXED (0,1,0) into `oxy-selectors.css`, losing to the engine reset and the reference sheet → paint-on-selectors, layout-on-elements/stylesheet split → §selector-cascade |
 | Whole sections invisible in the builder canvas (front end fine) | JS-gated reveal CSS hides them; the observer never fires in the canvas iframe → skip the gate + behaviour JS when `?breakdance_iframe=1` → §canvas-reveal |
 | Image element shows empty "Choose" in the builder (renders fine on front end) | Scripted media object too minimal — control needs full `wp_prepare_attachment_for_js()` JSON → §image-media-shape |
+| Client reports "the post type was never created" (ACF screens empty) but the CPT works | Code-registered CPTs/groups are invisible in ACF's admin UI → migrate to the ACF store + JSON sync for handover → RECIPES §ACF Pro content model |
+| CPT registered twice / fatal after ACF-store migration | The same post type must live in ONE home — remove the `register_post_type()` code when moving to the ACF store → RECIPES §ACF Pro content model |
+| CPT singles 404 right after registration changes | Stale rewrites → `flush_rewrite_rules()` once (option-flag pattern) |
 
 ---
 
@@ -401,6 +404,9 @@ renders a bare full-size `src` (a "looks fine, weighs 7 MB" page). Populate them
   `width`/`height` (CLS) and `fetchpriority: high` work as custom attributes.
 - `src` comes from `media.sizes[size].url` — if you set `size` to anything but `full`, you must also
   provide that key in the `media.sizes` map.
+- Contrast: a PhpCode renderer emitting images gets srcset FREE via `wp_get_attachment_image()`
+  (pass `sizes` in the attrs array) — often simpler than wiring Image elements when the images
+  are CPT-driven data (e.g. a logo wall from a Brands post type).
 
 ## §template-cache — a template's compiled CSS needs its OWN cache regen (2026-07-16)
 `generateCacheForPost()` on the PAGES does not refresh CSS compiled from a header/footer

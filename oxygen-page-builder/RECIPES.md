@@ -436,3 +436,69 @@ injecting clickable loops / dynamic fields (earlier thought builder-only):
   Grid/flex go on the inner `.bde-loop` wrapper (the real items nest there), NOT the outer
   `.bde-post-loop`. Isotope (filter bar) absolutely-positions items and BLOCKS CSS grid/flex, so the
   filter bar is OFF on these; for filter-bar + grid together, set columns in the builder's Isotope panel.
+
+## ACF Pro content model — CPTs + field groups (verified 6.8.6, 2026-07-17)
+
+Two registration homes; pick ONE per object (registering the same CPT in both fatally
+double-registers):
+- **Code** (`register_post_type()` on init + `acf_add_local_field_group()` on acf/init):
+  versioned by definition, but INVISIBLE in ACF's admin — the client/next dev sees empty
+  "Post Types"/"Field Groups" screens and reports "the post type was never created".
+- **ACF store** (UI-editable) **+ JSON sync into the plugin** — the handover-friendly
+  endpoint. Best of both: click-editable, and every UI save rewrites versioned JSON.
+
+JSON sync wiring (site plugin):
+```php
+add_filter('acf/settings/save_json', fn() => plugin_dir_path(__FILE__) . 'acf-json');
+add_filter('acf/settings/load_json', fn($p) => [...$p, plugin_dir_path(__FILE__) . 'acf-json']);
+```
+Fresh install → ACF shows "Sync available" for everything in `acf-json/`.
+
+Programmatic writes into the ACF store (register the save_json path FIRST so JSON lands):
+- Post type: `acf_update_post_type([...])` — ACF's OWN schema, not register_post_type args
+  (authoritative: `includes/post-types/class-acf-post-type.php::get_settings_array()`).
+  Key facts: `key` = `post_type_<slug>` (stored as post_name of an `acf-post-type` post —
+  guard idempotency on it); `menu_icon` accepts a string OR `{type:'dashicons',value:…}`
+  (the array is what the UI picker writes); custom slugs via
+  `rewrite = {permalink_rewrite:'custom_permalink', slug, with_front, feeds, pages}`;
+  set `advanced_configuration => true` or the UI hides the configured extras. Post-type
+  JSON is written automatically on save (there is NO `acf_write_json_post_type()`).
+- Field group: `acf_import_field_group($group)` with the exact
+  `acf_add_local_field_group()` array + `'active'=>true` — keys are PRESERVED, so content
+  written under code-registered fields keeps resolving after migration (verified:
+  values + repeater/gallery intact). Guard with `acf_get_field_group($key)['ID']`.
+  For JSON call `acf_write_json_field_group($saved)` explicitly after import.
+- After registrations change: `flush_rewrite_rules()` once (option-flag pattern), or the
+  CPT permalinks 404.
+
+Field-group conventions that pay off: stable prefixed keys (`field_<proj>_*`) — FROZEN
+once content exists (post meta stores the key in `_<name>`); `hide_on_screen:
+['the_content']` when ACF is the whole form; gallery/repeater need Pro; wysiwyg with
+`toolbar:'basic', media_upload:0` for client-safe copy fields.
+
+Admin columns for the client (site plugin, works with either registration home):
+`manage_<cpt>_posts_columns` filter + `manage_<cpt>_posts_custom_column` action reading
+`get_field()` (cover thumb / counts / ★ featured).
+
+⚠ Oxygen integration status: dynamic-data BINDINGS of ACF fields inside `_oxygen_data`
+trees and PostsLoop remain golden-sample gaps (see SKILL.md known-gaps) — build one in
+the real builder and read it back before scripting.
+
+## CPT-driven rail/grid: PostsLoop + dynamic card (the full chain, verified 2026-07-17)
+1. **Card = Global Block** reusing the design's existing card classes 1:1 — every content
+   piece dynamic: ContainerLink url = `[breakdance_dynamic field='post_permalink']`, Image
+   url-mode src = `…post_featured_image_url`, Texts bound to `post_title` / `acf_field_<KEY>`
+   (+ `text_dynamic_meta` mirrors). The shortcode resolves in link/image string props, not
+   just text (verified).
+2. **Loop node** in the page tree (node surgery, not rebuild): `content.query.query`
+   (custom mode for plain lists; **php mode for meta filters** — e.g. a `featured` toggle
+   driving a home rail) + `content.repeated_block.global_block = <card ID>`.
+3. **CSS unwrap**: the loop emits `.bde-post-loop > .bde-loop > article.bde-loop-item`;
+   `display:contents` on all three inside the styled parent keeps existing flex/snap CSS.
+4. **Single template**: `oxygen_template` + `oxy_template_settings($id, '<post_type>', 30)`
+   (per-post-type singular rules generate automatically for public CPTs) — dynamic phead +
+   ACF bindings + PhpCode renderers for gallery/repeater fields (image/repeater BINDINGS
+   still unshaped; PhpCode with `get_field()` is the sanctioned renderer).
+5. Editor UX: field groups `style:'seamless'` + `position:'acf_after_title'` + field
+   `menu_order` = the "form right under the title" feel; `ui_on_text/ui_off_text` on
+   true_false toggles.

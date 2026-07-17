@@ -35,12 +35,11 @@ render on the front-end yet fail to open in the builder. Never guess shapes — 
 3. **Post/term LISTS → prefer the native loop builder (`OxygenElements\PostsLoop`), not a PhpCode loop**
    — so the user can edit query + card design in the visual editor. This overrides the "PhpCode for
    loops" fallback for POST LISTS specifically (blog archive, related posts, etc.).
-   ⚠ **Authoring caveat (verified 2026-07-14):** `PostsLoop`/`Postslist` CANNOT be hand-authored via
-   blind `_oxygen_data` injection — `oxy_golden`/`defaultChildren` dump/null-prop `oxy_write_tree` all
-   **fatal**, and there's no shape in the docs. You MUST capture a builder-saved sample first: log in
-   (temp admin — RECIPES §temp admin), add a Post Loop in the builder, Save, `get_tree()` it back, then
-   templatize with `.post-card`. Until a sample is captured, a PhpCode loop is the interim fallback
-   (blog list #602 + single #574 related still use PhpCode — convert once a golden sample exists).
+   ✔ **Shapes now documented (golden-sampled 2026-07-17):** query at `content.query.query`
+   (custom/text/php modes) and the per-item card as a referenced GLOBAL BLOCK at
+   `content.repeated_block.global_block` — see PROPERTIES.md §PostsLoop. Hand-authoring works with
+   that shape; still verify in the builder after writing (io-ts is client-side). The card block
+   carries the per-post design; dynamic bindings inside it resolve per-post.
 
 ## Toolbox (use these, don't hand-roll)
 All in `scripts/` next to this file; site must be running in Local:
@@ -160,9 +159,10 @@ features — for each, use the golden-sample workflow (build once in the real bu
 - **Native Interactions** (Click/Scroll-Into-View/Page-Load triggers → toggle class, show/hide) —
   this skill hand-rolls scroll-reveal with an IntersectionObserver JS node; Interactions are the
   builder-editable alternative. Official docs: *Design → Interactions*.
-- **ACF / Meta Box dynamic data** (field bindings, repeaters, relationship queries) — this skill
-  binds core post fields only (`[breakdance_dynamic field='…']`). Official docs: *Integrations →
-  Custom Fields*.
+- **ACF / Meta Box dynamic data** — MOSTLY CLOSED: content model (RECIPES §ACF Pro content
+  model) and the text binding shape (`acf_field_<FIELD_KEY>` + `text_dynamic_meta`,
+  PROPERTIES §Dynamic data binding) are verified. Still unshaped: image/gallery-field bindings
+  on Image elements, repeater loops, relationship queries — golden-sample when first needed.
 - **Form hooks** — `breakdance_form_validate_field` filter + the developer Form Actions API, beyond
   the FormBuilder shapes in RECIPES. Official docs: *Forms → Hooks & Actions API*.
 
