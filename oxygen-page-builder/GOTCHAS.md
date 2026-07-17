@@ -45,6 +45,7 @@ representative examples ship in `scripts/examples/`.)
 | CPT registered twice / fatal after ACF-store migration | The same post type must live in ONE home — remove the `register_post_type()` code when moving to the ACF store → RECIPES §ACF Pro content model |
 | CPT singles 404 right after registration changes | Stale rewrites → `flush_rewrite_rules()` once (option-flag pattern) |
 | Programmatic `.svg` sideload returns an upload error / attachment #0 | WP disallows the svg mime — scoped `upload_mimes` filter around the write; also hand-write width/height metadata or the `<img>` ships without dimensions → RECIPES §Elegant SVG placeholders |
+| ACF fields added programmatically don't appear in the editor (script reported success) | Local JSON wins reads by key; DB-API mutations are invisible — rebuild the group from ONE canonical def + write the JSON directly → §acf-json-mutation |
 
 ---
 
@@ -492,3 +493,23 @@ itself writes. Producer: `wp_prepare_attachment_for_js($id)` (id/title/filename/
 sizes{thumbnail,medium,large,…} …). lib.php's `oxy_image()` now builds media this way and
 overlays `media.attributes.srcset|sizes` (§image-srcset) on top. Symptom family reminder:
 front-end-renders-fine ≠ builder-works — ALWAYS eyeball the builder after scripting trees.
+
+## §acf-json-mutation — you cannot mutate a JSON-synced field group through the DB API (2026-07-17)
+With ACF local JSON active (`acf/settings/load_json`), the group READS from the JSON file
+by key — the file wins over the database. A chain of traps, each burned in sequence:
+1. `acf_update_field(['parent' => $groupId, …])` creates the field post, but the edit
+   screen and `get_field()` keep serving the JSON's field list — the new field is
+   INVISIBLE. (Symptom: "the fields aren't in the editor" while the import script
+   reported success.)
+2. `acf_import_field_group()` on a JSON-synced key can MISS the existing group and create
+   a DUPLICATE group post — now there are two, and reads still come from JSON.
+3. After an import, SAME-REQUEST `acf_get_fields()` returns the stale local store — write
+   JSON from it and you clobber the file (we shrank an 11-field group to 1 and broke the
+   form; deleting "the duplicate" purged the real fields).
+THE RELIABLE PATH: treat the JSON FILE as the write target. Keep ONE canonical group
+definition in a script (keys frozen), and on change: purge the group's DB posts, delete
+the JSON, `acf_import_field_group($canonical)` once (clean DB), then WRITE THE JSON
+DIRECTLY from the canonical array (json_encode — never from a same-request read-back).
+Field VALUES are never at risk — they live in post meta referenced by field key, and
+survive any definition rebuild as long as keys stay identical (verified: place/galleries/
+toggles all intact after a full purge-and-rebuild).
