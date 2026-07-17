@@ -538,3 +538,31 @@ placement (sky corners cool, rock corners warm).
   the default; emit `<style>.hero{--wall-1:…}</style>`; CSS uses
   `radial-gradient(110% 100% at 0% 0%, var(--wall-1, transparent) 0%, transparent 60%)`
   ×4 corners over the base — vars absent = original design (safe fallback).
+
+## Related-posts as a native PostsLoop (php-query mode, verified 2026-07-17)
+"Related work" / "you might also like" is a POST LIST → PostsLoop + a card Global Block,
+NOT a PhpCode loop (Project Rule 3). The related-to-CURRENT-post query is dynamic, so use
+**php query mode** — it runs at render on the single, where `get_the_ID()` is the current
+post. Taxonomy-match first, then PAD so the row is never short:
+```php
+'query' => ['query' => ['active' => 'php', 'custom' => null, 'text' => '', 'php' =>
+  "\$cur=get_the_ID();
+   \$ids=wp_get_post_terms(\$cur,'df_work_type',['fields'=>'ids']);
+   \$rel=[];
+   if(\$ids && !is_wp_error(\$ids)){ \$rel=get_posts(['post_type'=>'df_project','posts_per_page'=>4,
+     'post__not_in'=>[\$cur],'fields'=>'ids','tax_query'=>[['taxonomy'=>'df_work_type','field'=>'term_id','terms'=>\$ids]]]); }
+   if(count(\$rel)<4){ \$more=get_posts(['post_type'=>'df_project','posts_per_page'=>4,
+     'post__not_in'=>array_merge([\$cur],\$rel),'fields'=>'ids']); \$rel=array_slice(array_merge(\$rel,\$more),0,4); }
+   if(!\$rel){ return ['post__in'=>[0]]; }               // no matches → render nothing
+   return ['post_type'=>'df_project','post__in'=>\$rel,'orderby'=>'post__in','posts_per_page'=>4];"]],
+'repeated_block' => ['global_block' => $CARD_ID, 'tag' => 'article'],
+```
+- Card Global Block = fully dynamic (permalink/cover/title/subheading via oxy_dyn_* — the
+  loop sets per-post context). Reusable across every single of that type.
+- `orderby=>'post__in'` preserves the taxonomy-first-then-padded order.
+- Unwrap the loop into your card grid with `display:contents` on
+  `.grid .bde-post-loop, .grid .bde-loop, .grid article.bde-loop-item` (§code-node-wrapper).
+- ⚠ `repeated_block.global_block` MUST be a RESOLVED integer at write time. A bare
+  undefined `$card` PHP var serializes to `null` → the loop renders
+  "Choose a Component from the dropdown" empties. Resolve the block id by title in the
+  build script (get_posts oxygen_block) before writing the tree.

@@ -69,6 +69,30 @@ function oxy_heading(string $text, string $level = 'h2', array $classes = [], ar
     return oxy_el('EssentialElements\\Heading', $p);
 }
 
+/** Dynamic-data shortcode for a field id (PROPERTIES §Dynamic data binding). */
+function oxy_dyn(string $fieldId): string { return "[breakdance_dynamic field='$fieldId']"; }
+
+/** Text bound to a dynamic field (core ids like post_title, or acf_field_<KEY>). */
+function oxy_dyn_text(string $fieldId, ?string $tag = null, array $classes = []): array {
+    $p = ['content' => ['content' => [
+        'text' => oxy_dyn($fieldId),
+        'text_dynamic_meta' => ['field' => $fieldId, 'shortcode' => oxy_dyn($fieldId), 'attributes' => []],
+    ]]];
+    if ($tag)     { $p['settings']['advanced']['tag'] = $tag; }
+    if ($classes) { $p['settings']['advanced']['classes'] = array_values($classes); }
+    return oxy_el('OxygenElements\\Text', $p);
+}
+
+/** Heading bound to a dynamic field. */
+function oxy_dyn_heading(string $fieldId, string $level = 'h2', array $classes = []): array {
+    $p = ['content' => ['content' => [
+        'text' => oxy_dyn($fieldId), 'tags' => $level,
+        'text_dynamic_meta' => ['field' => $fieldId, 'shortcode' => oxy_dyn($fieldId), 'attributes' => []],
+    ]]];
+    if ($classes) { $p['settings']['advanced']['classes'] = array_values($classes); }
+    return oxy_el('EssentialElements\\Heading', $p);
+}
+
 /** RichText for paragraphs/lists (HTML string). Do NOT put headings you want to restyle in here. */
 function oxy_rich(string $html, array $classes = [], array $selectorUuids = []): array {
     $p = ['content' => ['content' => ['text' => $html]]];

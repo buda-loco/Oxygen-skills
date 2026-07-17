@@ -39,7 +39,8 @@ render on the front-end yet fail to open in the builder. Never guess shapes — 
    (custom/text/php modes) and the per-item card as a referenced GLOBAL BLOCK at
    `content.repeated_block.global_block` — see PROPERTIES.md §PostsLoop. Hand-authoring works with
    that shape; still verify in the builder after writing (io-ts is client-side). The card block
-   carries the per-post design; dynamic bindings inside it resolve per-post.
+   carries the per-post design; dynamic bindings inside it resolve per-post. Related-to-current-post
+   lists use php-query mode (RECIPES §Related-posts as a native PostsLoop).
 
 ## Toolbox (use these, don't hand-roll)
 All in `scripts/` next to this file; site must be running in Local:

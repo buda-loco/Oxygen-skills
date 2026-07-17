@@ -46,6 +46,7 @@ representative examples ship in `scripts/examples/`.)
 | CPT singles 404 right after registration changes | Stale rewrites → `flush_rewrite_rules()` once (option-flag pattern) |
 | Programmatic `.svg` sideload returns an upload error / attachment #0 | WP disallows the svg mime — scoped `upload_mimes` filter around the write; also hand-write width/height metadata or the `<img>` ships without dimensions → RECIPES §Elegant SVG placeholders |
 | ACF fields added programmatically don't appear in the editor (script reported success) | Local JSON wins reads by key; DB-API mutations are invisible — rebuild the group from ONE canonical def + write the JSON directly → §acf-json-mutation |
+| PostsLoop renders "Choose a Component from the dropdown" per item | `repeated_block.global_block` is null — an undefined `$card` PHP var serialized; resolve the oxygen_block id (by title) BEFORE writing → RECIPES §Related-posts as a native PostsLoop |
 
 ---
 
