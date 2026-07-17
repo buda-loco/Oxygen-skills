@@ -502,3 +502,23 @@ the real builder and read it back before scripting.
 5. Editor UX: field groups `style:'seamless'` + `position:'acf_after_title'` + field
    `menu_order` = the "form right under the title" feel; `ui_on_text/ui_off_text` on
    true_false toggles.
+
+## Elegant SVG placeholders (plugin template, verified 2026-07-17)
+Ship `scripts/examples/elegant-placeholders.php` as a standalone plugin when a build needs
+placeholder imagery that looks INTENTIONAL (warm paper tones, hairline rule, small-caps
+label + dimensions + optional sublabel; deterministic tint per label). Three surfaces:
+- `ep_svg($w, $h, ['label','sublabel','tone'])` — the raw SVG string.
+- `ep_attachment($w, $h, ['label','sublabel','caption','alt'])` — media-library
+  placeholder, idempotent per (w,h,label) via `_ep_key` meta. Feed the IDs to ACF
+  gallery/image fields so templates render real attachments the client later REPLACES.
+- `/?ep=1200x800&label=Hero&sublabel=Placeholder` — ad-hoc endpoint (no file) for
+  mocking inside the builder.
+Palette/font filterable (`ep_palette`, `ep_font`). Two traps encoded in it:
+- `wp_upload_bits('x.svg', …)` FAILS silently-ish (error string) — WP disallows the svg
+  mime. Allow it with a SCOPED `upload_mimes` filter around the one call; never globally
+  (svg upload is an XSS vector for untrusted users).
+- SVG attachments get no intermediate sizes/metadata → `wp_get_attachment_image()` emits
+  no width/height (CLS). Write them yourself: `wp_update_attachment_metadata($id,
+  ['width'=>$w,'height'=>$h,'file'=>_wp_relative_upload_path($file)])`.
+ALWAYS say "placeholder" in the artwork itself (sublabel) — stock photos posing as the
+client's product mislead reviews; a labeled placeholder invites replacement.
