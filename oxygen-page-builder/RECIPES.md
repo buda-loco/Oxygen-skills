@@ -522,3 +522,19 @@ Palette/font filterable (`ep_palette`, `ep_font`). Two traps encoded in it:
   ['width'=>$w,'height'=>$h,'file'=>_wp_relative_upload_path($file)])`.
 ALWAYS say "placeholder" in the artwork itself (sublabel) — stock photos posing as the
 client's product mislead reviews; a labeled placeholder invites replacement.
+
+## Artwork-tinted backgrounds (4-point gallery wall, verified 2026-07-17)
+Give a dark hero its colour temperature from the artwork itself: extract the image's four
+QUADRANT colours server-side (GD), emit them as scoped CSS vars, paint four corner
+radial-gradients over the base ink. The gradient then mirrors the artwork's own colour
+placement (sky corners cool, rock corners warm).
+- Extraction that actually works: central crop (~18% margins — product shots are often
+  framed objects on neutral walls, plain averages sample mostly wall) + **saturation²-
+  weighted** averaging per quadrant (neutrals barely register; a plain mean grays out) +
+  a gentle saturation lift (×1.45) BEFORE mixing ~60% toward the base dark (so the tint
+  survives darkening and text contrast holds).
+- Cache in attachment meta keyed by a fingerprint of file+algorithm-version.
+- Renderer: CMS colour-picker overrides first (one field per corner), auto-extraction as
+  the default; emit `<style>.hero{--wall-1:…}</style>`; CSS uses
+  `radial-gradient(110% 100% at 0% 0%, var(--wall-1, transparent) 0%, transparent 60%)`
+  ×4 corners over the base — vars absent = original design (safe fallback).
