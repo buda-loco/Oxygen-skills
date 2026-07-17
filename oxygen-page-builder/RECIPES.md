@@ -566,3 +566,83 @@ post. Taxonomy-match first, then PAD so the row is never short:
   undefined `$card` PHP var serializes to `null` → the loop renders
   "Choose a Component from the dropdown" empties. Resolve the block id by title in the
   build script (get_posts oxygen_block) before writing the tree.
+
+## Static Mirror — export the whole site as attack-proof plain files (verified 2026-07-18)
+`scripts/examples/static-mirror.php` (+ its static-search.js companion): a standalone
+plugin that crawls the site over LOOPBACK HTTP (so the export is exactly what a visitor
+gets, whatever rendered it — Oxygen trees, PhpCode, options), harvests every referenced
+local asset (srcset variants, video, posters, css/js incl. depth-1 url() follows),
+rewrites the origin (production URL option, or root-relative), strips dead-on-static WP
+head links (oEmbed/REST/shortlink — two of them smuggle the origin URL-ENCODED past a
+plain str_replace), writes a styled 404.html + .htaccess (ErrorDocument + immutable
+asset caching) + a zip. Search keeps working via an exported search-index.json + a small
+script that hooks the site's search overlay client-side (only injected into the export).
+- The honest security claim: a same-host cache protects NOTHING (wp-login/PHP still
+  reachable). Protection = deploy the export to the public host and keep WP private —
+  the public surface has no PHP, no DB, no login.
+- Trap: custom template_redirect endpoints (llms.txt-style) serve content with HTTP 404
+  — WP marks unknown routes 404 BEFORE template_redirect; call `status_header(200)`.
+- Verify by SERVING the export (`python3 -m http.server`) and curling routes + assets +
+  a full-text origin-remnant sweep — never by eyeballing the file tree.
+
+**Static-first serving on the SAME server + hidden login** (the plugin's second half):
+- `advanced-cache.php` DROP-IN serves the export before WP connects to the DB, for every
+  public request. It bails (→ live WP) for: any `wordpress_logged_in_` cookie (editors
+  preview), the secret login slug, and wp-cron. Needs `define('WP_CACHE', true)` in
+  wp-config — detect it with a REGEX on `define(...'WP_CACHE'...)`, NOT a substring test
+  (false-positives on the salt strings, which contain "WP_CACHE"-like noise... verified).
+- Apache/LiteSpeed also get an `.htaccess` block (placed ABOVE the WordPress block) that
+  serves files with zero PHP on the public path; on nginx the drop-in is the mechanism.
+- **Hidden login** = a PHP guard (`init`, pri 1): `/wp-login.php` and `/wp-admin` (no live
+  session) return the static 404; the real login is `require`d from a secret slug route
+  (`wp_loaded`), and `site_url`/`wp_redirect` filters keep every generated login URL on
+  the slug. Defense in depth: even a FORGED logged-in cookie that slips past the drop-in
+  still hits the PHP guard (verified: forged cookie + wp-admin → 404).
+- ALWAYS ship an escape hatch: an mu-plugin honoring `define('STATIC_MIRROR_OFF', true)`
+  in wp-config to disable the guard if the slug is lost; slug recoverable via WP-CLI.
+- **Auto-update** (opt-in): re-export in the background when admin content changes,
+  DEBOUNCED — a single wp-cron single-event pushed to now+90s, cleared+rescheduled on each
+  change, so a burst of saves = one rebuild. Split the handlers: `save_post` gets an
+  autosave/revision/draft filter; deletions/terms/menus/acf-options use a plain scheduler
+  (post IDs and term IDs share the int space — `get_post_status($termId)` can collide, so
+  never status-filter a non-post trigger). Cron fires while an editor works the admin; on a
+  low-traffic LIVE site add a real system cron hitting wp-cron.php (the drop-in lets
+  wp-cron.php through). The export sets a STATIC_MIRROR_EXPORTING guard so it never marks
+  itself dirty.
+- Fully portable: crawls every `public` post type + taxonomy, folds any string ACF field
+  into the search index — no per-project code.
+- **SECURITY — a high-effort code review caught these; every static-export/serving plugin
+  must get them right (all verified fixed):**
+  1. *Path traversal in the drop-in.* `rawurldecode(REQUEST_URI)` joined onto the export
+     dir let `/..%2f..%2fwp-config.php` readfile() your secrets, UNAUTHENTICATED, before
+     WP loads. Fix: normalize `.`/`..` segments out, then `realpath()` + require the result
+     to sit under `realpath(exportDir)` (strpos root . DIRECTORY_SEPARATOR === 0).
+  2. *Forge-proof the editor bypass — NEVER trust a cookie NAME.* Checking
+     `strpos($k,'wordpress_logged_in_')===0` means `Cookie: wordpress_logged_in_x=1`
+     bypasses the whole static shield into live WP. Can't validate WP's HMAC before WP
+     loads, so use a plugin-owned SECRET: a random token set as an httponly `sm_preview`
+     cookie only for genuinely `current_user_can` editors, compared with `hash_equals`.
+  3. *Loopback re-export freezes.* With serving on, the crawler's own GET gets served the
+     OLD static file → every re-export re-captures the frozen copy. Send the same secret
+     token as a request HEADER the drop-in honors, so only the crawler bypasses.
+  4. *CSS `url()` following can exfiltrate.* `url(../../../wp-config.php)` in any stylesheet
+     copied wp-config into the PUBLIC export. Contain: require an asset extension AND
+     `realpath` under `realpath(ABSPATH)`; normalize `..` before recursing.
+  5. *Client search XSS.* Post titles/urls → `innerHTML` executed `<img onerror>`. Use
+     `textContent` for the title and validate the url through `new URL()` (http/https only).
+  6. *Login guard edges.* `str_starts_with($uri,'/wp-login.php')` misses `//wp-login.php`
+     (normalize leading slashes first); `str_starts_with($uri,'/wp-admin')` 404s a legit
+     `/wp-admin-guide/` page (anchor: `=== '/wp-admin' || starts_with '/wp-admin/'`).
+  7. *Reader/writer path drift.* Drop-in hardcoded `__DIR__.'/uploads/...'` but export used
+     `wp_upload_dir()` — diverge on a moved uploads dir. Embed `var_export(export_dir())`.
+  8. *attachment status.* `attachment_updated` never rebuilt — attachments are status
+     `inherit`, which the draft-skip list dropped; revisions (also inherit) are already
+     filtered by `wp_is_post_revision`, so just don't skip `inherit`.
+  9. *Origin leak.* `rewrite()` missed PERCENT-ENCODED origins (`https%3A%2F%2F…`) — add the
+     `rawurlencode`/`%2F`/entity variants.
+  LESSON: a plugin that serves files before WP loads is a mini web server — treat every
+  request-derived path as hostile, and never make a security decision from data the client
+  fully controls (a cookie name, a header presence). Run /code-review on anything like it.  Attack-surface battery (all verified):
+  wp-login/wp-admin/xmlrpc/wp-json → 404, POST → 404, forged-cookie → 404, secret slug →
+  live login form posting back to the slug, public pages → static hit, editor cookie →
+  live WP.
