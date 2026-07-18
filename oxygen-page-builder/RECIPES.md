@@ -718,3 +718,13 @@ and `scripts/examples/admin-card-view.php`.
   `button-primary` inside a rounded group double-borders and looks broken. A plain `<button>` group
   with a shared border, `border-left` dividers and an `.is-active{background:#2271b1;color:#fff}`
   state reads cleanly and matches wp-admin.
+- **Fill vs Fit is a real preference, not one answer** — PHOTOS (portfolios, covers) want
+  `object-fit:cover` (fill the frame, crop, no wasted space); LOGOS want `object-fit:contain` on a
+  chequerboard (whole mark, never cropped). Expose it as a third `fill|fit` segment (body class flips
+  `object-fit` + shows the chequerboard/padding only in fit), and set a PER-TYPE default via a
+  `oxy_admin_views_default_fit` filter (a logo/brand CPT → `fit`, everything else → `fill`). Don't
+  force one globally.
+- **`box-sizing:border-box` on the frame is mandatory** — with `padding` + `width:100%` under the
+  default content-box, the frame is 24px wider than the card, the card's `overflow:hidden` clips the
+  right edge, and a "contained" logo looks cropped (chased this as a phantom object-fit bug). Put
+  `box-sizing:border-box` on the card and `* {box-sizing:border-box}` inside it.
