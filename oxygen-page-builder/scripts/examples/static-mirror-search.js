@@ -33,11 +33,19 @@
         return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '#';
       } catch (e) { return '#'; }
     };
+    // accent-fold so "fernandez" matches "Fernández" (index is folded too)
+    var fold = function (s) {
+      s = s.toLowerCase();
+      return s.normalize ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : s;
+    };
     var render = function () {
-      var q = input.value.trim().toLowerCase();
+      var q = fold(input.value.trim());
       if (!q) { list.textContent = ''; return; }
       load().then(function (d) {
-        var hits = d.filter(function (e) { return e.text.indexOf(q) > -1; }).slice(0, 8);
+        var rank = function (e) { return (e.ttext || fold(e.title)).indexOf(q) > -1 ? 0 : 1; };
+        var hits = d.filter(function (e) { return e.text.indexOf(q) > -1; })
+          .sort(function (a, b) { return rank(a) - rank(b); })
+          .slice(0, 8);
         list.textContent = '';
         if (!hits.length) {
           var none = document.createElement('p');

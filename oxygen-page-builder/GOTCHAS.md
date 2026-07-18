@@ -41,6 +41,8 @@ representative examples ship in `scripts/examples/`.)
 | Panel edits on a class do nothing; class layout collapses | Selectors compile UNPREFIXED (0,1,0) into `oxy-selectors.css`, losing to the engine reset and the reference sheet → paint-on-selectors, layout-on-elements/stylesheet split → §selector-cascade |
 | Whole sections invisible in the builder canvas (front end fine) | JS-gated reveal CSS hides them; the observer never fires in the canvas iframe → skip the gate + behaviour JS when `?breakdance_iframe=1` → §canvas-reveal |
 | Image element shows empty "Choose" in the builder (renders fine on front end) | Scripted media object too minimal — control needs full `wp_prepare_attachment_for_js()` JSON → §image-media-shape |
+| A tiny image is inexplicably huge (a 450px logo at 550KB) | It carries a monster embedded ICC/Photoshop profile — sips AND ffmpeg preserve it (even `-map_metadata -1`). Re-encode with PIL (`Image.convert('RGB').save()` without `icc_profile`) to drop it (verified 1.25MB→8KB) |
+| Dynamically-bound cover image ships full-size (no srcset) | Oxygen Image url-mode (`post_featured_image_url`) can't carry srcset — render the cover via a PhpCode `wp_get_attachment_image(get_post_thumbnail_id())` inside the loop instead |
 | Client reports "the post type was never created" (ACF screens empty) but the CPT works | Code-registered CPTs/groups are invisible in ACF's admin UI → migrate to the ACF store + JSON sync for handover → RECIPES §ACF Pro content model |
 | CPT registered twice / fatal after ACF-store migration | The same post type must live in ONE home — remove the `register_post_type()` code when moving to the ACF store → RECIPES §ACF Pro content model |
 | CPT singles 404 right after registration changes | Stale rewrites → `flush_rewrite_rules()` once (option-flag pattern) |
@@ -514,3 +516,18 @@ DIRECTLY from the canonical array (json_encode — never from a same-request rea
 Field VALUES are never at risk — they live in post meta referenced by field key, and
 survive any definition rebuild as long as keys stay identical (verified: place/galleries/
 toggles all intact after a full purge-and-rebuild).
+
+## §js-minify-asi — never token-join a script you didn't parse (2026-07-18)
+When optimizing a static export, minifying JS by collapsing ALL whitespace (the way you can
+for CSS) SILENTLY BREAKS scripts: JavaScript has Automatic Semicolon Insertion, so a newline
+is sometimes a statement terminator (`return\n x` ≠ `return x`; a line ending an expression
+followed by `(`/`[` on the next line fuses into a call/index). A regex minifier also can't
+tell a real `//`/`/* */` comment from those tokens INSIDE a string or regex literal
+(`"http://…"`, `/a\/b/`). Doing it right needs a real JS parser (terser/esbuild) — out of
+scope for an in-plugin PHP routine. THE SAFE ROUTINE (verified): only strip WHOLE-LINE
+comments, blank lines, and indentation, and NEVER join two lines — every original newline is
+preserved, so ASI is untouched and no string/regex body is ever edited. Modest size win, but
+the real compression is the gzip sibling (lossless, ~65% off even minified JS). CSS is the
+opposite — no ASI, comments only `/* */`, string literals rare — so full whitespace-collapse
+minify is safe there. Rule of thumb: aggressive-minify CSS, line-safe-minify JS, gzip both.
+See RECIPES §Static Mirror asset optimization for the delivery (content-negotiated `.gz`).

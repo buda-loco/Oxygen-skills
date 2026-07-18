@@ -646,3 +646,26 @@ script that hooks the site's search overlay client-side (only injected into the 
   wp-login/wp-admin/xmlrpc/wp-json → 404, POST → 404, forged-cookie → 404, secret slug →
   live login form posting back to the slug, public pages → static hit, editor cookie →
   live WP.
+
+**Asset optimization on export (verified 2026-07-18, admin toggle, default ON):**
+- Three stages hooked into the existing write points (`copy_asset()` for CSS/JS/SVG/JSON,
+  `put()` for HTML/XML/txt) — no new crawl pass:
+  1. *CSS* → full minify (strip comments keeping `/*! */`, collapse whitespace, tighten around
+     `{}:;,>~+`, drop the last `;` in a block). Safe: CSS has no ASI. (48KB → 8KB gzip.)
+  2. *JS* → **conservative, line-safe minify** — strip whole-line `//` and `/* */` comments,
+     blank lines, and indentation, but NEVER join tokens across newlines. See GOTCHAS
+     §js-minify-asi for why token-joining a generic (un-parsed) script silently breaks it.
+  3. *gzip sibling* (`$file.gz`, level 9, skip <512B) for every text asset AND page — a 100%
+     lossless transform, so it's the real win even on already-minified Oxygen CSS (~80% off).
+- **Delivery = content negotiation in the drop-in**, not blind serving: the serve closure adds
+  `Vary: Accept-Encoding`, and only when the request carries `Accept-Encoding: gzip` AND a
+  `.gz` sibling exists for a text ext does it swap the body to the `.gz` and send
+  `Content-Encoding: gzip` + `Content-Length: filesize(.gz)`. Clients without gzip get the
+  identity file untouched. The same `.gz` files are what nginx `gzip_static on` / Netlify /
+  Vercel serve automatically, so one export is optimal here OR deployed. (Homepage: 71KB
+  identity → 14.7KB on the wire, −79%.)
+- Don't minify inline `<style>`/`<script>` in HTML with regex (string/`</script>` hazards) —
+  gzip the whole page instead; the linked `.css`/`.js` files are where minification pays.
+- VERIFY by curling with and without `-H 'Accept-Encoding: gzip'`: the gzip body must
+  `gunzip -c` back to the EXACT identity bytes (proves no double-encoding from a front proxy
+  re-gzipping your already-gzipped body — it must honor your `Content-Encoding` and pass through).
