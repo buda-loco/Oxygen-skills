@@ -49,6 +49,8 @@ representative examples ship in `scripts/examples/`.)
 | Programmatic `.svg` sideload returns an upload error / attachment #0 | WP disallows the svg mime — scoped `upload_mimes` filter around the write; also hand-write width/height metadata or the `<img>` ships without dimensions → RECIPES §Elegant SVG placeholders |
 | ACF fields added programmatically don't appear in the editor (script reported success) | Local JSON wins reads by key; DB-API mutations are invisible — rebuild the group from ONE canonical def + write the JSON directly → §acf-json-mutation |
 | PostsLoop renders "Choose a Component from the dropdown" per item | `repeated_block.global_block` is null — an undefined `$card` PHP var serialized; resolve the oxygen_block id (by title) BEFORE writing → RECIPES §Related-posts as a native PostsLoop |
+| Static-first host 404s every `?query` URL (search, `?type=` filters) but bare paths work | `.htaccess` `-f` test used `%{REQUEST_URI}`, which keeps the query string on LiteSpeed → test the path capture `$1` instead → §static-first-litespeed |
+| Full-height `position:fixed` overlay/drawer renders only as tall as its parent; children spill past its background | An ancestor has `transform`/`filter`/`backdrop-filter`/`will-change` → it's the containing block, not the viewport → size with `height:100dvh`, anchor `top:0` → §fixed-in-filtered-ancestor |
 
 ---
 
@@ -549,17 +551,32 @@ static-first serves and this PHP rarely runs. VERIFY against LIVE WP (bypass any
 cache with a `?cb=<n>` query — see §static-first-litespeed): `grep -c fonts.googleapis` must be
 0 and the preload + local `fonts.css` present. See RECIPES §Self-hosting webfonts.
 
-## §static-first-litespeed — serving 404s query-string URLs; run() silently re-enables it (2026-07-18)
+## §static-first-litespeed — serving 404s query-string URLs; %{REQUEST_URI} keeps the query (2026-07-18)
 The Static Mirror serving block (`.htaccess`) serves the export for bare paths but ENDS in a
-catch-all `RewriteRule ^ - [R=404,L]`: on a LiteSpeed / nginx-hybrid managed host it 404s EVERY
-url that isn't a pre-generated static file — so `?type=x`, `?s=x`, ANY dynamic/query URL returns
-a bare WEBSERVER 404 (`iso-8859-1`, ~355 bytes — NOT WP's styled utf-8 404; that content-type is
-your tell the request never reached PHP). Worse: calling `StaticMirror\run()` on the remote
-RE-WRITES that serving block + re-creates `advanced-cache.php` + `WP_CACHE` as a side effect — so
-a routine re-export silently re-breaks routing. If static-first doesn't route cleanly on the host,
-DISABLE it and serve live WP: overwrite `.htaccess` with just the standard `# BEGIN WordPress`
-block, `rm wp-content/advanced-cache.php`, `wp config set WP_CACHE false --raw`. Re-enable ONLY
-once the `advanced-cache.php` DROP-IN path (not `.htaccess`) is confirmed working on that host.
+catch-all `RewriteRule ^ - [R=404,L]`. Symptom: on a LiteSpeed / nginx-hybrid managed host EVERY
+query-string URL — `?type=x`, `?s=x`, any `?…` — returns a bare WEBSERVER 404 (`iso-8859-1`,
+~355 bytes — NOT WP's styled utf-8 404; that content-type is your tell the request never reached
+PHP), while the same path without a query serves fine.
+**ROOT CAUSE + FIX (verified 2026-07-18):** the static-file test used `%{DOCUMENT_ROOT}/…latest%{REQUEST_URI} -f`.
+On Apache `%{REQUEST_URI}` is the path only, but **on LiteSpeed it still contains the query string**,
+so `/portfolio/?type=film` tested a file literally named `portfolio/?type=film` (never exists) and
+fell through to the 404. Fix: test the RewriteRule's **path capture `$1`** instead — `mod_rewrite`
+strips the query before matching the rule, so `$1` is query-free on both servers (`$N` in a
+`RewriteCond` references the RewriteRule that follows it):
+```
+RewriteCond %{DOCUMENT_ROOT}/{$m}/$1 -f
+RewriteRule ^(.*)$ {$m}/$1 [L]
+RewriteCond %{DOCUMENT_ROOT}/{$m}/$1/index.html -f
+RewriteRule ^(.*?)/?$ {$m}/$1/index.html [L]
+```
+The static page then serves for `?type=`/`?s=` and the site's own client-side filter/search
+overlay handles the query. (See `scripts/examples/static-mirror.php` → `htaccess_rules()`.)
+Second trap: calling `StaticMirror\run()` on the remote RE-WRITES the serving block + re-creates
+`advanced-cache.php` + `WP_CACHE` as a side effect, so a routine (or auto-) re-export silently
+re-applies whatever rules the plugin ships — deploy the fixed plugin FIRST, or a stale copy keeps
+re-breaking. If you'd rather not serve static at all on a flaky host, disable it and serve live WP:
+overwrite `.htaccess` with just the standard `# BEGIN WordPress` block, `rm advanced-cache.php`,
+`wp config set WP_CACHE false --raw`, and set `static_mirror_auto` to `0` so nothing re-enables it.
 Two adjacent managed-host traps burned the same day:
 - **Edge/proxy cache** (`x-proxy-cache: HIT`, host-level, separate from WP + Static Mirror):
   caches bare anonymous GET HTML, IGNORES client `Cache-Control: no-cache`, REJECTS `PURGE`
@@ -571,3 +588,23 @@ Two adjacent managed-host traps burned the same day:
   `revalidate_freq` (often 2s) means the web SAPI self-heals in seconds — but a loopback
   re-export INSIDE that window re-captures the stale render. Bump the file mtime and wait past
   `revalidate_freq` before re-exporting.
+
+## §fixed-in-filtered-ancestor — position:fixed sizes to a transformed/blurred ancestor, not the viewport (2026-07-19)
+A `position: fixed` element is fixed to the VIEWPORT only if no ancestor "captures" it. Any
+ancestor with `transform`, `filter`, **`backdrop-filter`**, `perspective`, `will-change:
+transform`, or `contain: paint/layout/strict` (all non-`none`) becomes the fixed element's
+containing block — so its `inset`/`top`/`bottom`/`%` resolve against THAT ancestor's box, not the
+screen. Symptom that burned us: a mobile nav drawer `.nav{position:fixed; inset:0 0 0 auto}` meant
+to be full-height rendered only ~144px tall — the exact height of `.hdr`, which had
+`backdrop-filter: blur(12px)` for the glass header. With `justify-content:center`, the menu items
+overflowed the short box: the top links hid behind the header and the last link + socials spilled
+out below the drawer's background (looked like "Contact isn't in the menu"). Computed `height`
+matching a parent's height (not the viewport) is the tell — inspect it before touching the CSS.
+**Fix:** give the fixed child an explicit viewport-relative size and anchor ONE edge, instead of
+relying on `top:0`+`bottom:0` (which resolve to the trapping ancestor): `top:0; bottom:auto;
+height:100dvh` (`100svh` fallback). `dvh`/`svh` are viewport units, so height is correct regardless
+of the containing block; `top:0` is fine when the trapping ancestor sits at the viewport top (a
+top-fixed header does). If the ancestor can also translate (scroll-hide header), un-hide it while
+the overlay is open so the child isn't dragged off-screen. Alternative: portal the overlay out to
+`<body>` — not always possible inside a builder's fixed tree. Don't "fix" it by removing the
+backdrop-filter; that's the design.

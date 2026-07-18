@@ -814,7 +814,7 @@ function admin_page(): void
                     <?php wp_nonce_field('static_mirror'); ?>
                     <label for="sm_target"><strong><?php echo esc_html__('Production URL', 'static-mirror'); ?></strong> <?php echo esc_html__('(set before a launch export)', 'static-mirror'); ?></label><br>
                     <input type="url" id="sm_target" name="static_mirror_target" class="regular-text"
-                           value="<?php echo esc_attr($target); ?>" placeholder="https://daianafernandez.com">
+                           value="<?php echo esc_attr($target); ?>" placeholder="https://example.com">
                     <button class="button" name="static_mirror_run" value="1"><?php echo esc_html__('Save & export', 'static-mirror'); ?></button>
                     <p class="description"><?php echo esc_html__('Empty = relative links (fine for a same-server setup). Set your real domain to bake it into canonicals, social tags and the sitemap.', 'static-mirror'); ?></p>
                     <label for="sm_hook"><strong><?php echo esc_html__('Deploy hook URL', 'static-mirror'); ?></strong> <?php echo esc_html__('(optional)', 'static-mirror'); ?></label><br>
@@ -1097,9 +1097,16 @@ function htaccess_rules(string $slug): string
         . "RewriteRule ^ - [S=5]\n"
         . "RewriteCond %{REQUEST_METHOD} !^(GET|HEAD)$\n"
         . "RewriteRule ^ - [R=404,L]\n"
-        . "RewriteCond %{DOCUMENT_ROOT}/{$m}%{REQUEST_URI} -f\n"
+        // Map by the REQUEST PATH ($1 from the RewriteRule below), NOT %{REQUEST_URI}:
+        // on LiteSpeed / nginx-hybrid hosts %{REQUEST_URI} keeps the query string, so
+        // /portfolio/?type=film tests a file named "portfolio/?type=film" (never exists)
+        // and every query-string URL fell through to the catch-all 404. $1 is the URL
+        // path only (mod_rewrite strips the query before matching), so client-side
+        // filtering (?type=) and the search overlay work off the static page. Portable:
+        // $N in a RewriteCond references the RewriteRule that follows it, on Apache + LSWS.
+        . "RewriteCond %{DOCUMENT_ROOT}/{$m}/$1 -f\n"
         . "RewriteRule ^(.*)$ {$m}/$1 [L]\n"
-        . "RewriteCond %{DOCUMENT_ROOT}/{$m}%{REQUEST_URI}/index.html -f\n"
+        . "RewriteCond %{DOCUMENT_ROOT}/{$m}/$1/index.html -f\n"
         . "RewriteRule ^(.*?)/?$ {$m}/$1/index.html [L]\n"
         . "RewriteRule ^$ {$m}/index.html [L]\n"
         . "RewriteRule ^ - [R=404,L]\n"
