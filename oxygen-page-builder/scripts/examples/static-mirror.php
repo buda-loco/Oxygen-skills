@@ -301,7 +301,11 @@ function rewrite(string $s): string
 function harvest(string $content): array
 {
     $paths = [];
-    foreach (array_unique([home_url(), set_url_scheme(home_url(), 'https')]) as $o) {
+    // BOTH schemes (+ the raw home_url): behind an SSL-terminating proxy the
+    // loopback crawl reaches the backend over http, so WP emits http:// asset
+    // URLs even when home_url() is https — must match those too, exactly like
+    // rewrite() does, or their files never get harvested (broken references).
+    foreach (array_unique([home_url(), set_url_scheme(home_url(), 'https'), set_url_scheme(home_url(), 'http')]) as $o) {
         $q = preg_quote($o, '#');
         preg_match_all('#' . $q . '(/[^\s"\'()<>\\\\]+?\.(?:' . ASSET_EXT . '))(?:\?[^\s"\'<>]*)?#i', $content, $m);
         $paths = array_merge($paths, $m[1]);
@@ -810,7 +814,7 @@ function admin_page(): void
                     <?php wp_nonce_field('static_mirror'); ?>
                     <label for="sm_target"><strong><?php echo esc_html__('Production URL', 'static-mirror'); ?></strong> <?php echo esc_html__('(set before a launch export)', 'static-mirror'); ?></label><br>
                     <input type="url" id="sm_target" name="static_mirror_target" class="regular-text"
-                           value="<?php echo esc_attr($target); ?>" placeholder="https://example.com">
+                           value="<?php echo esc_attr($target); ?>" placeholder="https://daianafernandez.com">
                     <button class="button" name="static_mirror_run" value="1"><?php echo esc_html__('Save & export', 'static-mirror'); ?></button>
                     <p class="description"><?php echo esc_html__('Empty = relative links (fine for a same-server setup). Set your real domain to bake it into canonicals, social tags and the sitemap.', 'static-mirror'); ?></p>
                     <label for="sm_hook"><strong><?php echo esc_html__('Deploy hook URL', 'static-mirror'); ?></strong> <?php echo esc_html__('(optional)', 'static-mirror'); ?></label><br>

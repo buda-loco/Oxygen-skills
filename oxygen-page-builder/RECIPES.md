@@ -593,6 +593,11 @@ script that hooks the site's search overlay client-side (only injected into the 
   (false-positives on the salt strings, which contain "WP_CACHE"-like noise... verified).
 - Apache/LiteSpeed also get an `.htaccess` block (placed ABOVE the WordPress block) that
   serves files with zero PHP on the public path; on nginx the drop-in is the mechanism.
+  ⚠ On a LiteSpeed / nginx-hybrid MANAGED host the `.htaccess` block mis-routes: its catch-all
+  `RewriteRule ^ - [R=404,L]` 404s every query-string / dynamic URL (`?type=…`, `?s=…`). Prefer
+  the `advanced-cache.php` DROP-IN path there, or keep serving OFF and run live WP. Also note
+  `StaticMirror\run()` re-writes this block on every export — a remote re-export silently
+  re-enables it. Full symptom table + recovery: GOTCHAS §static-first-litespeed.
 - **Hidden login** = a PHP guard (`init`, pri 1): `/wp-login.php` and `/wp-admin` (no live
   session) return the static 404; the real login is `require`d from a secret slug route
   (`wp_loaded`), and `site_url`/`wp_redirect` filters keep every generated login URL on
@@ -728,3 +733,33 @@ and `scripts/examples/admin-card-view.php`.
   default content-box, the frame is 24px wider than the card, the card's `overflow:hidden` clips the
   right edge, and a "contained" logo looks cropped (chased this as a phantom object-fit bug). Put
   `box-sizing:border-box` on the card and `* {box-sizing:border-box}` inside it.
+
+## Self-hosting webfonts — kill the FOUC + the cross-origin fetch (verified 2026-07-18)
+Oxygen's Global Settings font is delivered as a render-blocking `fonts.googleapis.com` link that
+Oxygen prints DIRECTLY into `<head>` (no handle — you cannot `wp_dequeue_style` it; see GOTCHAS
+§oxygen-google-fonts). Self-host instead — headings paint on the first frame and the static
+export carries no external calls. Pattern (a small project plugin, front end + builder preview):
+1. **Grab the woff2 + `@font-face` CSS.** From the Google Fonts CSS API (one variable file per
+   subset/style) or `google-webfonts-helper`. Save `assets/fonts/<family>-<subset>.woff2` and an
+   `assets/fonts.css` with one `@font-face` per file: `font-family` (the exact name Oxygen uses,
+   e.g. `Montserrat`), `font-weight: 200 900` (the variable range), `font-style`, `font-display:
+   swap`, `src: url('fonts/<file>.woff2') format('woff2')`, and the `unicode-range` per subset so
+   latin-ext / italic only download when a glyph needs them. `url()` is relative to `fonts.css`.
+2. **Enqueue the local stylesheet** in place of the Google URL:
+   `wp_enqueue_style('site-fonts', plugin_dir_url(__FILE__).'assets/fonts.css', [], null);`
+3. **Preload the primary file** at `wp_head` priority 1 (the one weight-range every heading + body
+   uses; the others load on demand via `unicode-range`):
+   `echo '<link rel="preload" href="'.esc_url($woff2).'" as="font" type="font/woff2" crossorigin>';`
+   `crossorigin` is REQUIRED even same-origin — fonts fetch in CORS mode; without it the preload is
+   ignored and re-fetched.
+4. **Strip Oxygen's own link** (front end only), because it has no handle:
+   ```php
+   add_action('template_redirect', function () {
+       if (is_admin()) return;
+       ob_start(fn($h) => (string) preg_replace('#\s*<link\b[^>]*fonts\.googleapis\.com[^>]*>#i', '', $h));
+   });
+   ```
+VERIFY against LIVE WP, not a cached copy: on a static-first / edge-cached host add `?cb=<n>` to
+force a fresh render (GOTCHAS §static-first-litespeed), then confirm `grep -c fonts.googleapis`
+is 0 and both the preload and `fonts.css` are present. Re-export afterwards so the static copy
+bundles the woff2 and contains zero Google calls.

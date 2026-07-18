@@ -531,3 +531,43 @@ the real compression is the gzip sibling (lossless, ~65% off even minified JS). 
 opposite — no ASI, comments only `/* */`, string literals rare — so full whitespace-collapse
 minify is safe there. Rule of thumb: aggressive-minify CSS, line-safe-minify JS, gzip both.
 See RECIPES §Static Mirror asset optimization for the delivery (content-negotiated `.gz`).
+
+## §oxygen-google-fonts — Oxygen prints its OWN `fonts.googleapis.com` <link> (no handle) (2026-07-18)
+Oxygen/Breakdance emits a render-blocking Google Fonts stylesheet for the Global Settings font
+DIRECTLY into `<head>` — printed inline, NOT via `wp_enqueue_style`, so there is no handle to
+`wp_dequeue_style()` and no filter to unhook. Symptom: a FOUC on headings (swap flash) plus a
+cross-origin font fetch you didn't ask for, and it survives every attempt to dequeue the font.
+FIX (self-host + strip), all three:
+1. Ship the font as SAME-ORIGIN woff2 + a local `@font-face` stylesheet (`font-display:swap`,
+   `unicode-range` per subset so latin-ext/italic load on demand) and enqueue THAT.
+2. `<link rel=preload href=…woff2 as=font type=font/woff2 crossorigin>` the primary file at
+   `wp_head` priority 1, so headings paint with the real face on the first frame (no swap).
+3. Remove Oxygen's own link with an OUTPUT BUFFER on `template_redirect` (front-end only):
+   `ob_start(fn($h)=>preg_replace('#\s*<link\b[^>]*fonts\.googleapis\.com[^>]*>#i','',$h))`.
+Bonus: the static export then ships with ZERO external Google calls. Cheap in production, where
+static-first serves and this PHP rarely runs. VERIFY against LIVE WP (bypass any static/edge
+cache with a `?cb=<n>` query — see §static-first-litespeed): `grep -c fonts.googleapis` must be
+0 and the preload + local `fonts.css` present. See RECIPES §Self-hosting webfonts.
+
+## §static-first-litespeed — serving 404s query-string URLs; run() silently re-enables it (2026-07-18)
+The Static Mirror serving block (`.htaccess`) serves the export for bare paths but ENDS in a
+catch-all `RewriteRule ^ - [R=404,L]`: on a LiteSpeed / nginx-hybrid managed host it 404s EVERY
+url that isn't a pre-generated static file — so `?type=x`, `?s=x`, ANY dynamic/query URL returns
+a bare WEBSERVER 404 (`iso-8859-1`, ~355 bytes — NOT WP's styled utf-8 404; that content-type is
+your tell the request never reached PHP). Worse: calling `StaticMirror\run()` on the remote
+RE-WRITES that serving block + re-creates `advanced-cache.php` + `WP_CACHE` as a side effect — so
+a routine re-export silently re-breaks routing. If static-first doesn't route cleanly on the host,
+DISABLE it and serve live WP: overwrite `.htaccess` with just the standard `# BEGIN WordPress`
+block, `rm wp-content/advanced-cache.php`, `wp config set WP_CACHE false --raw`. Re-enable ONLY
+once the `advanced-cache.php` DROP-IN path (not `.htaccess`) is confirmed working on that host.
+Two adjacent managed-host traps burned the same day:
+- **Edge/proxy cache** (`x-proxy-cache: HIT`, host-level, separate from WP + Static Mirror):
+  caches bare anonymous GET HTML, IGNORES client `Cache-Control: no-cache`, REJECTS `PURGE`
+  (403). Only the hosting panel's purge button or its TTL clears it; query strings bypass it.
+  After a deploy that changes HTML, bare pages stay stale until purged — prove it with a
+  `?cb=<n>` cache-buster (forces a MISS → the real live render).
+- **Web opcache ≠ CLI opcache.** `wp eval 'opcache_reset()'` resets the CLI SAPI, NOT the web
+  one; a freshly rsynced `.php` can keep running old bytecode. `validate_timestamps` +
+  `revalidate_freq` (often 2s) means the web SAPI self-heals in seconds — but a loopback
+  re-export INSIDE that window re-captures the stale render. Bump the file mtime and wait past
+  `revalidate_freq` before re-exporting.
