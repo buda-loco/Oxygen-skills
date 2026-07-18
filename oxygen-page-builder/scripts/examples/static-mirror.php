@@ -717,9 +717,15 @@ function admin_page(): void
     $target   = target_origin();
     $protected = dropin_is_ours();
     $everExported = is_array($last) || is_array($autoLast);
-    $lastTime = is_array($autoLast) ? (int) $autoLast['time'] : (is_array($last) ? (int) $last['time'] : 0);
-    $lastPages = $report ? (int) $report['pages']
-        : (is_array($autoLast) ? (int) $autoLast['pages'] : (is_array($last) ? (int) $last['report']['pages'] : 0));
+    // a manual export writes static_mirror_last, auto-update writes
+    // static_mirror_auto_last — show whichever actually ran most recently
+    $manualTime = is_array($last) ? (int) $last['time'] : 0;
+    $autoTime   = is_array($autoLast) ? (int) $autoLast['time'] : 0;
+    $lastTime   = max($manualTime, $autoTime);
+    $lastPages  = $report ? (int) $report['pages']
+        : ($autoTime >= $manualTime
+            ? (is_array($autoLast) ? (int) $autoLast['pages'] : 0)
+            : (int) $last['report']['pages']);
     $dirty = (int) get_option('static_mirror_dirty_since');
     ?>
     <div class="wrap" style="max-width:820px">
