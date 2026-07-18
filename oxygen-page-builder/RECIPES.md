@@ -669,3 +669,52 @@ script that hooks the site's search overlay client-side (only injected into the 
 - VERIFY by curling with and without `-H 'Accept-Encoding: gzip'`: the gzip body must
   `gunzip -c` back to the EXACT identity bytes (proves no double-encoding from a front proxy
   re-gzipping your already-gzipped body — it must honor your `Content-Encoding` and pass through).
+
+## Admin UX standards — featured-image column + card/list view (verified 2026-07-18)
+Two small, GENERIC admin conveniences that turn image-driven CPTs (portfolios,
+catalogs, logo/brand libraries) from title-only lists into something you can scan
+by picture. Both are drop-in and register themselves for the right post types — no
+per-type code. Working, de-branded references: `scripts/examples/admin-thumb-columns.php`
+and `scripts/examples/admin-card-view.php`.
+
+**1. Featured-image list column (a standard for EVERY thumbnail-supporting type).**
+- Target `post_type_supports($pt,'thumbnail')`, NOT `public===true` — a logo/brand CPT
+  is frequently non-public yet still wants the column. Exclude `attachment`.
+- Wire per type inside `admin_init`: `add_filter("manage_{$pt}_posts_columns", …)` +
+  `add_action("manage_{$pt}_posts_custom_column", …, 10, 2)`. Insert the cell right after
+  the `cb` checkbox column. Get the current screen's type from `get_current_screen()->post_type`.
+- **Render 'medium' (UNCROPPED) + `object-fit:contain`, NOT the cropped 'thumbnail'.**
+  The 150×150 hard crop chops wide wordmarks ("The Ritz-Carlton" → "ITZ-CA"); contain keeps
+  the whole logo/cover and the tile backdrop fills the rest.
+- Backdrop = a light **chequerboard** (two crossed linear-gradients) so pale/transparent
+  logos stay visible; frame with `1px solid #c3c4c7` (WP's control grey) + `border-radius:6px`
+  so it matches wp-admin. Emit the CSS in `admin_head` gated on `get_current_screen()->base==='edit'`.
+- Label via a filter (default "Cover"; a brand type returns "Logo").
+
+**2. Card ⇄ List view toggle (own plugin; remembers the choice).**
+- Default target set = every CUSTOM image CPT: `get_post_types(['_builtin'=>false])` ∩
+  `post_type_supports('thumbnail')`. Filterable.
+- Build the grid SERVER-SIDE from the SAME query the table used — on `edit.php` the list
+  table has already replaced `$GLOBALS['wp_query']`, so `$wp_query->posts` is the current
+  page/filter/sort/pagination set. Render it in `admin_footer`, then JS moves it in right
+  after `.tablenav.top` so the search box, filter dropdowns, status links and PAGINATION all
+  keep working (a filter/paging click reloads and re-renders cards).
+- Switch views purely with a body class: `admin_body_class` adds `oxy-av--cards|--list` from
+  saved user meta (rendered server-side → no flash-of-list). CSS: `body.oxy-av--cards
+  .wp-list-table{display:none}` + `.oxy-av-grid{display:grid}`.
+- Persist per-USER, per-POST-TYPE in user meta via a nonce-guarded `wp_ajax_` handler; validate
+  the incoming post type against the target set before saving.
+- Card frame reuses the same contain + chequerboard trick so logos stay whole; whole-card is a
+  click-through to Edit (screen-reader `<a>` underneath; real Edit/View/Trash links on hover above).
+- Bulk actions/column-sort live in the hidden table — fine; switch to List for those. Keeping the
+  top toolbar visible is what preserves search/filter/paging in card mode.
+- **Uniform cards** (so the grid reads as a tidy matrix, not a ragged wall): give the image frame a
+  FIXED `aspect-ratio` (4:3 vertical / a square left-thumb horizontal) with `object-fit:contain` +
+  the chequerboard, and clamp the title to a FIXED height (`-webkit-line-clamp:2` + `height:2.7em`).
+  Equal frame + equal title height ⇒ every card is identical. A `vertical|horizontal` orientation is
+  just a body class flipping the card's `flex-direction` (+ frame from full-width-4:3 to a fixed
+  square on the left) — persist it exactly like the view choice (own meta key, own segment control).
+- **Build the toggles as a bespoke segmented control, NOT WP `.button`s** — `.button` +
+  `button-primary` inside a rounded group double-borders and looks broken. A plain `<button>` group
+  with a shared border, `border-left` dividers and an `.is-active{background:#2271b1;color:#fff}`
+  state reads cleanly and matches wp-admin.
