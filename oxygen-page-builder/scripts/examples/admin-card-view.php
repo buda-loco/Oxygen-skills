@@ -28,16 +28,11 @@ if (!defined('ABSPATH')) {
 
 const NONCE = 'oxy_admin_views';
 
-/** Preference keys → [allowed values (default first), user-meta key]. */
+/** Preference key → allowed values (default first). User meta is "oxy_av_{key}_{postType}". */
 const PREFS = [
-    'view'   => ['list', 'cards'],       // list table  | card grid
-    'orient' => ['vertical', 'horizontal'], // image on top | image on the left
-    'fit'    => ['fill', 'fit'],          // cover (crop) | contain (whole image)
-];
-const META = [
-    'view'   => 'oxy_av_view',
-    'orient' => 'oxy_av_orient',
-    'fit'    => 'oxy_av_fit',
+    'view'   => ['list', 'cards'],           // list table  | card grid
+    'orient' => ['vertical', 'horizontal'],  // image on top | image on the left
+    'fit'    => ['fill', 'fit'],             // cover (crop) | contain (whole image)
 ];
 
 /**
@@ -81,7 +76,7 @@ function pref(string $pt, string $key): string
     if (!in_array($default, $allowed, true)) {
         $default = $allowed[0];
     }
-    $val = (string) get_user_meta(get_current_user_id(), META[$key] . '_' . $pt, true);
+    $val = (string) get_user_meta(get_current_user_id(), "oxy_av_{$key}_{$pt}", true);
     return in_array($val, $allowed, true) ? $val : $default;
 }
 
@@ -93,7 +88,7 @@ add_action('wp_ajax_' . NONCE, function (): void {
     $val = sanitize_key((string) ($_POST['value'] ?? ''));
     if ($pt !== '' && in_array($pt, types(), true)
         && isset(PREFS[$key]) && in_array($val, PREFS[$key], true)) {
-        update_user_meta(get_current_user_id(), META[$key] . '_' . $pt, $val);
+        update_user_meta(get_current_user_id(), "oxy_av_{$key}_{$pt}", $val);
         wp_send_json_success();
     }
     wp_send_json_error();
@@ -205,6 +200,11 @@ add_action('admin_footer', function (): void {
         return;
     }
 
+    // Only the card view needs the grid; skip the per-post thumbnail work
+    // entirely in list view (the common default). Switching view reloads, so
+    // the grid is always server-rendered when it's actually shown.
+    $grid = '';
+    if (pref($pt, 'view') === 'cards') {
     global $wp_query;
     $posts = $wp_query->posts ?? [];
 
@@ -263,6 +263,7 @@ add_action('admin_footer', function (): void {
     }
     echo '</div>';
     $grid = ob_get_clean();
+    }
 
     $cfg = [
         'pt'     => $pt,
@@ -285,14 +286,17 @@ add_action('admin_footer', function (): void {
         var C = <?php echo wp_json_encode($cfg); ?>;
         var form = document.getElementById('posts-filter');
         if (!form) { return; }
-
-        var top = form.querySelector('.tablenav.top');
-        var holder = document.createElement('div');
-        holder.innerHTML = C.grid;
-        var grid = holder.firstElementChild;
-        if (top && grid) { top.insertAdjacentElement('afterend', grid); }
-
         var body = document.body;
+
+        // inject the (cards-only) grid right after the top toolbar — keeps the
+        // search box, filters and pagination usable in card mode
+        var top = form.querySelector('.tablenav.top');
+        if (top && C.grid) {
+            var holder = document.createElement('div');
+            holder.innerHTML = C.grid;
+            top.insertAdjacentElement('afterend', holder.firstElementChild);
+        }
+
         function save(key, value) {
             var fd = new FormData();
             fd.append('action', C.action);
@@ -300,11 +304,13 @@ add_action('admin_footer', function (): void {
             fd.append('pt', C.pt);
             fd.append('key', key);
             fd.append('value', value);
-            fetch(C.ajax, { method: 'POST', credentials: 'same-origin', body: fd });
+            return fetch(C.ajax, { method: 'POST', credentials: 'same-origin', body: fd });
         }
 
-        // opts = [[value, dashicon, label], …]; onSet flips body classes, isActive reads them
-        function makeSwitch(cls, key, opts, isActive, onSet) {
+        // A segmented control whose options each map to body class `prefix + value`.
+        // opts = [[value, dashicon, label], …]. `reload` switches (view) re-render
+        // server-side after saving; the others just restyle the cards in place.
+        function makeSwitch(cls, key, prefix, opts, reload) {
             var sw = document.createElement('span');
             sw.className = 'oxy-av-switch ' + cls;
             opts.forEach(function (o) {
@@ -314,56 +320,42 @@ add_action('admin_footer', function (): void {
                 b.dataset.v = o[0];
                 b.title = o[2];
                 b.setAttribute('aria-label', o[2]);
+                b.classList.toggle('is-active', body.classList.contains(prefix + o[0]));
                 b.innerHTML = '<span class="dashicons ' + o[1] + '"></span>';
                 sw.appendChild(b);
             });
-            function sync() {
-                sw.querySelectorAll('.oxy-av-seg').forEach(function (b) {
-                    b.classList.toggle('is-active', isActive(b.dataset.v));
-                });
-            }
-            sync();
             sw.addEventListener('click', function (e) {
                 var b = e.target.closest('.oxy-av-seg');
-                if (!b) { return; }
-                onSet(b.dataset.v);
-                sync();
-                save(key, b.dataset.v);
+                if (!b || b.classList.contains('is-active')) { return; }
+                var v = b.dataset.v;
+                if (reload) { save(key, v).then(function () { location.reload(); }); return; }
+                opts.forEach(function (o) { body.classList.toggle(prefix + o[0], o[0] === v); });
+                sw.querySelectorAll('.oxy-av-seg').forEach(function (x) {
+                    x.classList.toggle('is-active', x.dataset.v === v);
+                });
+                save(key, v);
             });
-            return { el: sw, sync: sync };
+            return sw;
         }
 
-        var orientSw, fitSw;
-        var viewSw = makeSwitch('oxy-av-switch--view', 'view', [
-            ['list',  'dashicons-list-view', C.i18n.list],
-            ['cards', 'dashicons-grid-view', C.i18n.cards]
-        ], function (v) { return body.classList.contains('oxy-av--' + v); }, function (v) {
-            body.classList.toggle('oxy-av--cards', v === 'cards');
-            body.classList.toggle('oxy-av--list', v !== 'cards');
-            orientSw.sync(); fitSw.sync();
-        });
-
-        orientSw = makeSwitch('oxy-av-switch--orient oxy-av-switch--card-only', 'orient', [
-            ['vertical',   'dashicons-grid-view', C.i18n.vertical],
-            ['horizontal', 'dashicons-menu-alt',  C.i18n.horizontal]
-        ], function (v) { return body.classList.contains('oxy-av-o--' + v); }, function (v) {
-            body.classList.toggle('oxy-av-o--vertical', v === 'vertical');
-            body.classList.toggle('oxy-av-o--horizontal', v === 'horizontal');
-        });
-
-        fitSw = makeSwitch('oxy-av-switch--fit oxy-av-switch--card-only', 'fit', [
-            ['fill', 'dashicons-fullscreen-alt',      C.i18n.fill],
-            ['fit',  'dashicons-fullscreen-exit-alt', C.i18n.fit]
-        ], function (v) { return body.classList.contains('oxy-av-f--' + v); }, function (v) {
-            body.classList.toggle('oxy-av-f--fill', v === 'fill');
-            body.classList.toggle('oxy-av-f--fit', v === 'fit');
-        });
+        var switches = [
+            makeSwitch('oxy-av-switch--view', 'view', 'oxy-av--', [
+                ['list',  'dashicons-list-view', C.i18n.list],
+                ['cards', 'dashicons-grid-view', C.i18n.cards]
+            ], true),
+            makeSwitch('oxy-av-switch--orient oxy-av-switch--card-only', 'orient', 'oxy-av-o--', [
+                ['vertical',   'dashicons-grid-view', C.i18n.vertical],
+                ['horizontal', 'dashicons-menu-alt',  C.i18n.horizontal]
+            ], false),
+            makeSwitch('oxy-av-switch--fit oxy-av-switch--card-only', 'fit', 'oxy-av-f--', [
+                ['fill', 'dashicons-fullscreen-alt',      C.i18n.fill],
+                ['fit',  'dashicons-fullscreen-exit-alt', C.i18n.fit]
+            ], false)
+        ];
 
         var h1 = document.querySelector('.wrap .wp-heading-inline');
         if (h1) {
-            h1.insertAdjacentElement('afterend', fitSw.el);
-            h1.insertAdjacentElement('afterend', orientSw.el);
-            h1.insertAdjacentElement('afterend', viewSw.el);
+            switches.reverse().forEach(function (sw) { h1.insertAdjacentElement('afterend', sw); });
         }
     })();
     </script>
