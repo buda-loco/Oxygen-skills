@@ -31,6 +31,14 @@ Then ALWAYS: `scripts/wp-eval.sh scripts/validate-tree.php <id> fetch` and open
 `http://example.local?oxygen=builder&id=<id>`. Brand-style every new class (PROJECT RULE) —
 add CSS to the global stylesheet (footer #15 CssCode → `post-15.css`) or a page-local `oxy_css()` node.
 
+> **RULE §4 — a class on EVERY element, from the start.** Every `oxy_*` factory takes a `$classes`
+> arg — always pass one (BEM/brand name), for containers too (`oxy_div([...], ['card__body'])`), never
+> just the leaf. Style that class directly; don't lean on descendant selectors (`.card p`) that leave
+> children class-less. Images use `oxy_image()` (never a Text/span); backgrounds use a `Div` (§5).
+> Retrofit/verify an existing site: `scripts/examples/audit-classes.php` (read-only) →
+> `scripts/examples/fix-classes.php <id> [apply]` (adds a derived class to each class-less element).
+> `oxy_ensure_class(&$node,'name')` / `oxy_needs_class($type)` in lib.php are the building blocks.
+
 **Parsing existing Gutenberg content into editable components** (how the 16 content pages were built —
 `site-builds/build_internal_pages.php` `content_nodes()`): run `apply_filters('the_content', $post->post_content)`,
 `DOMDocument`-parse the top-level HTML, emit one `oxy_text(…, 'hN')` per heading + one `oxy_rich()` per

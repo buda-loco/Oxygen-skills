@@ -608,3 +608,85 @@ top-fixed header does). If the ancestor can also translate (scroll-hide header),
 the overlay is open so the child isn't dragged off-screen. Alternative: portal the overlay out to
 `<body>` — not always possible inside a builder's fixed tree. Don't "fix" it by removing the
 backdrop-filter; that's the design.
+
+## Class-less elements + images-as-spans (2026-07-19)
+Two hard rules (SKILL.md §4, §5), each a real build defect found by audit:
+
+- **Symptom:** an element can't be selected/edited cleanly in the builder, or its styling "comes from
+  nowhere." **Cause:** it has NO authored class — only Oxygen's auto `bde-`/`oxy-` id-classes — and is
+  styled contextually by a parent's descendant selector (`.prose p`, `.content-hero h1`) or by the auto
+  id-class / node-level design. **Fix:** give the element its own BEM/brand class
+  (`settings.advanced.classes` or a native selector) and move its CSS onto THAT class. Every authored
+  element (Div/Section/Text/RichText/Image/Button/links/Icon/video) must carry one.
+  - Audit: `scripts/examples/audit-classes.php` (read-only) — walks every `_oxygen_data` tree and lists
+    class-less authored elements per post (native widgets, Component refs, composite children, code
+    nodes are class-optional and excluded).
+  - ⚠ You can't blindly auto-fix: a meaningful class needs a *semantic* BEM name and its rule migrated
+    off the descendant/id selector (which changes specificity). Do it per section, then re-audit.
+- **Symptom:** an "image" has no image controls (alt/sizes/lazy/swap) and isn't editable as an image.
+  **Cause:** it was placed as a Text/span (or an `<img>` inside RichText). **Fix:** content image →
+  `OxygenElements\Image`; background/decorative image → a `Div` with a background layer. NEVER a span.
+
+## Empty selector `breakpoint_base` must be {} not [] (2026-07-19)
+A native selector with NO design still needs `properties.breakpoint_base` as an **object** `{}`.
+PHP `oxy_selector($name, [])` produced `"breakpoint_base":[]` (empty array) → the builder throws
+**"IO-TS decoding failed"** for EVERY page (selectors are global), even though the front-end renders and
+`validate-tree.php` passes (it checks the tree, NOT the selectors option). Fix in `oxy_selector`:
+`'breakpoint_base' => ($groups ?: new \stdClass())`. To repair existing: read `oxy_read_selectors()`,
+set any empty `breakpoint_base` to `new stdClass()`, `saveSelectors()`. Same PHP []-vs-{} trap as tree
+root properties — any "empty map" written from PHP needs `new stdClass()`/`(object)[]`.
+
+## Container vs Div for selector-editable LAYOUT — the key to design-in-selectors (2026-07-19, VERIFIED)
+To make an element's LAYOUT fully controllable from a **Selector** (class) — so design lives in the
+selector, is reusable, and shows in the design panel — the element MUST be **`OxygenElements\Container`**
+(`.oxy-container`), NOT **`EssentialElements\Div`** (`.bde-div`).
+- The engine ships `.breakdance .bde-div{display:flex;flex-direction:column;align-items:flex-start;
+  text-align:left;max-width:100%;position:relative;background-size:cover}` at **(0,2,0)**. A plain
+  Selector compiles to `.my-class{…}` at **(0,1,0)** → it LOSES those 7 layout props on a `.bde-div`
+  (the selector's `display:grid` silently becomes the reset's flex/block). This is why selector-based
+  layout on Divs fails.
+- **`.oxy-container` has NO such reset** → a selector's `display:grid`/flex/etc. WINS. Verified live:
+  `.grid-sample-container` (on an `OxygenElements\Container`) computes `display:grid` 2×2, padding/border/bg
+  all from the selector.
+- **Rule for full-editability builds:** use `OxygenElements\Container` for every layout wrapper, put ALL
+  design in a named selector (`meta.classes`), never node-level. Content leaves (Text/Image/Button) take
+  selectors too (no reset competes on their props). Reserve `EssentialElements\Div` only where you don't
+  need selector-driven layout.
+- Selector group shapes are builder-authored & confirmed: `layout.{display, grid.simple_grid_template_columns/rows,
+  grid_align/flex_align.{primary_axis,cross_axis}, gap.{row,column}{}, flex_direction}`,
+  `background.background_color` (8-digit hex ok), `spacing.spacing.padding.{t,r,b,l}{number,unit,style}`,
+  `borders.borders.{side}{width{},color,style}` (+ `border_radius`), `typography.{color,text_align,text_transform}`,
+  `size.{width,height,aspect_ratio,object_fit,overflow}`, `position.position`. All under `properties.breakpoint_base`.
+
+### Three caveats when converting an existing (reference-stylesheet) page to design-in-selectors
+Learned converting a live page's content blocks (cards, image-behind-text tiles, video, overlays) —
+Div→Container + selectors + real Images. The architecture works, but three things WILL bite:
+
+1. **Shared structural classes are a site-wide trap — never convert them per-page.** Classes like
+   `.section`/`.container`/`.section-heading`/`.featured-grid` are used by DOZENS of pages via
+   `settings.advanced.classes` strings + the reference stylesheet. If you (a) make a same-named
+   *selector* and attach it on ONE page and (b) delete the stylesheet rule, every OTHER page's plain-string
+   reference goes unstyled. Worse: `.container{max-width:1600px}` as a (0,1,0) selector LOSES to the
+   `.bde-div` reset's `max-width:100%` (0,2,0) unless the element is ALSO flipped Div→Container. So a
+   shared primitive can only move to selectors as a **site-wide migration**: create the selectors →
+   `oxy_promote_classes_to_selectors()` on EVERY page that uses the name (promotes advanced string →
+   `meta.classes` uuid) → flip those Divs→Container → THEN remove the stylesheet rules. Do it as one
+   scoped operation, or leave the primitive as a reference-stylesheet class (legitimate Strategy B; the
+   `.breakdance`-prefixed rule at (0,2,0) already ties/beats the reset). Check usage first:
+   `SELECT post_id FROM wp_postmeta WHERE meta_key='_oxygen_data' AND meta_value LIKE '%classname%'`.
+2. **Some CSS can't live in a selector — it legitimately stays in the stylesheet (documented exception,
+   like RichText inner-tag typography).** Oxygen's design panel/selector groups can't express
+   **`inset`/`top`/`right`/`bottom` offsets, `z-index`, or `::before`/`::after` pseudo-elements**. So an
+   absolute-cover image (`position:absolute;inset:0;z-index:0`), a gradient overlay (`::after`), a gold
+   accent bar (`::before`), a CSS play-triangle (`::after`) all remain as `.breakdance .name{…}` rules in
+   the reference stylesheet even in a "design-in-selectors" build. Put everything the panel CAN express
+   (display/grid/flex/gap/aspect/size/object-fit/spacing/typography/background-color/position-keyword) in
+   the selector; keep only the inexpressible remainder in CSS. This is expected, not a failure.
+3. **Converting a fake-image `<span>` to a real `Image` in place** (rule 5 cleanup): mutate the node so
+   it keeps its id + tree position — set `data.type='OxygenElements\\Image'`, copy
+   `oxy_image($attId)['data']['properties']` onto it, then `meta.classes=[selectorUuid]`. Remove the
+   per-instance background rule the span relied on (`.oxy-text-<page>-<id>{background:…url(…)…}`), and if
+   the old span-background baked in a dark gradient for text legibility, re-add it as a `.name::after`
+   overlay (caveat 2). Decorative tile images then get `alt=""`+`aria-hidden` (rule 6). To source the
+   attachment id from a URL: `get_page_by_path('slug',OBJECT,'attachment')` or a `guid LIKE '%/file.jpg'`
+   query.

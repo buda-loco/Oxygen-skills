@@ -41,6 +41,42 @@ render on the front-end yet fail to open in the builder. Never guess shapes — 
    that shape; still verify in the builder after writing (io-ts is client-side). The card block
    carries the per-post design; dynamic bindings inside it resolve per-post. Related-to-current-post
    lists use php-query mode (RECIPES §Related-posts as a native PostsLoop).
+4. **Every visual element carries its OWN class — no bare/class-less elements.** Put a BEM/brand class
+   on `settings.advanced.classes` (reference-stylesheet) or a native selector on `meta.classes` for
+   EVERY authored element (Div, Section, Text, RichText, Image, Button, WrapperLink/ContainerLink/
+   TextLink, Icon, Html5Video). An element with no authored class only gets Oxygen's auto `bde-`/`oxy-`
+   id-classes — the user can't select/edit it cleanly, and its design ends up applied "at a distance."
+   **Design belongs ON the element's own class**, never via descendant selectors that reach class-less
+   children (`.prose p{…}`, `.content-hero h1{…}`), never on the auto id-class, never node-level-only.
+   ⚠ Most common violation: **contextual styling** — the parent (`.prose`, `.content-hero`,
+   `.section-heading`) has a class and its Text/RichText children have none. It renders, but fails this
+   rule. Give each child its own class and move its rule onto that class. Audit any site with
+   `scripts/examples/audit-classes.php` (read-only; lists every class-less authored element).
+5. **Images: use the correct element — NEVER a span/Text.** A content image = the **`Image`** element
+   (`OxygenElements\Image`, PROPERTIES §Image). A decorative/background image = a **`Div`** (or Section)
+   with a background layer — never an `<img>` stuffed in a Text/span. Faking an image with a Text/span
+   means no image controls (alt, sizes, lazy, swap) and it isn't editable as an image in the builder.
+   HARD RULE (verified pain point).
+6. **Accessibility + SEO are part of "done" — verify them on every build, never skip.** A page that
+   renders is not finished until both check out. These are CRUCIAL, not optional polish.
+   - **Images:** every `<img>` MUST have an `alt` attribute. Informative image → descriptive alt
+     (`oxy_image` pulls it from the media library — so the ATTACHMENT must have alt text, or the img
+     ships with none). Decorative / meaning-carried-by-adjacent-text (category tiles, hero-behind-text,
+     overlay photos) → explicit **`alt=""` + `aria-hidden="true"`** so screen readers skip it. Empty
+     `custom_alt` does NOT emit `alt=""` — the renderer omits it; force it via
+     `settings.advanced.attributes = [{name:'alt',value:''},{name:'aria-hidden',value:'true'}]`.
+     ⚠ A missing media-library alt is the #1 cause of alt-less images — check the attachment, not just the node.
+   - **Interactive elements must be real controls:** a clickable CTA is a `Button`/`TextLink`/
+     `ContainerLink` (`<a>`/`<button>`), NEVER a `Text`/`<span>` styled as a button (not focusable, not
+     announced, no href). If you see `<span class="btn">`, it's a bug.
+   - **Headings:** exactly ONE `<h1>` per page (slider heroes emit one H1 per slide — demote to `h2`
+     + add one `.sr-only` H1; see SEO.md); heading levels nest sensibly (no h2→h4 jumps).
+   - **SEO structures present:** `<title>`, `meta[name=description]`, OpenGraph, `link[rel=canonical]`,
+     `<html lang>`. On this kind of build they come from an SEO mu-plugin — confirm it's active and the
+     tags actually render (see SEO.md).
+   - **How to verify (do it every build):** load the front-end and run the audit snippet in SEO.md
+     §a11y-seo-audit (counts alt-less imgs, span-buttons, H1s, and missing meta) — the same way you
+     verify CSS with `element.matches()`. "It probably has alt" is not verification.
 
 ## Toolbox (use these, don't hand-roll)
 All in `scripts/` next to this file; site must be running in Local:
@@ -76,11 +112,13 @@ function-scoped, `global` silently fails).
    or build once in the real builder + read `_oxygen_data` back.
 2. Brand-style every new class (rule 1). Where CSS lives: global = the HEADER template's CssCode node (loads after the engine reset, before page CSS → builder edits still win)
    (preserve it when rebuilding #15!); page-local = an `oxy_css()` node on the page.
-3. Verify — all three, every time:
+3. Verify — all four, every time:
    - `scripts/wp-eval.sh scripts/validate-tree.php <id> fetch` (io-ts invariants + trap checks + front-end 200)
    - open `http://example.local?oxygen=builder&id=<id>` — must load with no "IO-TS decoding failed"
    - CSS: check `element.matches(sel)` in the browser console — NEVER trust "the rule is in the file"
      (see GOTCHAS.md §dead WC selector).
+   - **a11y + SEO (rule 6):** run the front-end audit snippet in SEO.md §a11y-seo-audit — 0 alt-less
+     imgs, 0 span-buttons, exactly 1 H1, and title/description/OG/canonical/lang all present.
 
 ## Work general → specific (CSS and templates)
 The single highest-leverage habit. Push every decision as far UP its ladder as it can live; step down

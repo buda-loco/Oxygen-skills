@@ -1,8 +1,10 @@
-# SEO on demosite (Oxygen + WooCommerce, no SEO plugin)
+# SEO, social sharing & accessibility (Oxygen + WooCommerce, no SEO plugin)
 
 There is **no SEO plugin** (Yoast/RankMath). Know exactly what WP core + WooCommerce give for free so you
 don't duplicate, and fill the rest with the `acme-seo.php` mu-plugin. **Always verify by fetching
-the rendered HTML and grepping the `<head>`** — never assume a tag is there.
+the rendered HTML and grepping the `<head>`** — never assume a tag is there. SEO, **social-sharing meta
+(OG/Twitter)**, and **accessibility** are all part of "done" (SKILL.md rule 6) — run §a11y-seo-audit
+(bottom of this file) on every build; zero findings = pass.
 
 ## What WP core + WooCommerce already provide (don't re-add)
 - `<title>` via `document_title_parts` = "Page Title – {blogname}" (so set `blogname`/`blogdescription`
@@ -46,6 +48,55 @@ For home / a product / a content page / shop / search / cart, fetch the URL serv
 `application/ld+json` count. Confirm: search = `noindex`; cart/checkout/account = `noindex` + canonical;
 shop = has canonical + indexable; every page = has description + OG + one H1. (Script pattern in the
 session scratchpad `seo-audit.php`.)
+
+## Social sharing meta (Open Graph + Twitter Card) — verify per page
+Sharing any URL on Facebook / LinkedIn / WhatsApp / X / Slack pulls **`og:title` + `og:description` +
+`og:image`** (and `twitter:card=summary_large_image` + `twitter:image`). These come from the seo
+mu-plugin (§"What's missing" item 2), NOT from Oxygen — so a page can look perfect and still share as a
+bare link if the plugin's off or the image source is empty. **Always confirm the rendered tags** (audit
+snippet below). Key gotchas:
+- `og:image`/`twitter:image` resolve product image → featured image → brand-default attachment. A page
+  with none of those shares the brand default — fine, but if you want a page-specific share image, give
+  the post a **featured image** (even tree-native pages honor it for OG).
+- `og:url` must be the canonical URL; `og:locale` matches `<html lang>` (`es_AR` form, underscore).
+- `og:type` = `website` (front/pages) vs `article` (posts) vs `product` (PDP) — the plugin sets this;
+  verify on each type.
+
+## Accessibility — part of "done" (SKILL.md rule 6), verify every build
+- **Every `<img>` needs `alt`.** Informative → descriptive alt (comes from the ATTACHMENT's media-library
+  alt via `oxy_image`; if the attachment has none, the img ships alt-less — fix the attachment or set a
+  custom alt). Decorative / text-carries-the-meaning (category tiles, hero-behind-text, overlay photos)
+  → **explicit `alt="" ` + `aria-hidden="true"`**. Empty `custom_alt` does NOT render `alt=""` (the
+  renderer omits it) → force via `settings.advanced.attributes=[{name:'alt',value:''},{name:'aria-hidden',value:'true'}]`.
+- **CTAs are real controls** (`Button`/`TextLink`/`ContainerLink` → `<a>`/`<button>`), never a
+  `Text`/`<span class="btn">` (not focusable, no href, not announced). A styled span is a bug.
+- **One `<h1>` per page** (slider heroes → demote slides to h2 + one `.sr-only` h1, above); heading
+  levels nest (no h2→h4 skips).
+- Interactive/native WC markup: keep visible focus states and don't `outline:none` without a replacement.
+
+## §a11y-seo-audit — front-end audit snippet (run in the browser console on the live URL)
+The counterpart to `element.matches()` for CSS — never assume, measure. Zero findings = pass.
+```js
+(() => {
+  const q = s => [...document.querySelectorAll(s)];
+  const imgsNoAlt   = q('img').filter(i => !i.hasAttribute('alt')).map(i => i.src.split('/').pop());
+  const spanButtons = q('.btn,[class*="btn"]').filter(b => b.tagName==='SPAN').map(b => b.textContent.trim());
+  const h1s         = q('h1').map(h => h.textContent.trim().slice(0,40));
+  const meta = {
+    title:      document.title || 'MISSING',
+    description:document.querySelector('meta[name=description]')?.content ? 'ok' : 'MISSING',
+    canonical:  document.querySelector('link[rel=canonical]')?.href || 'MISSING',
+    lang:       document.documentElement.lang || 'MISSING',
+    og_title:   document.querySelector('meta[property="og:title"]')?.content ? 'ok':'MISSING',
+    og_image:   document.querySelector('meta[property="og:image"]')?.content || 'MISSING',
+    og_desc:    document.querySelector('meta[property="og:description"]')?.content ? 'ok':'MISSING',
+    twitter:    document.querySelector('meta[name="twitter:card"]')?.content || 'MISSING',
+  };
+  return { PASS: !imgsNoAlt.length && !spanButtons.length && h1s.length===1
+                 && !Object.values(meta).includes('MISSING'),
+           imgs_without_alt: imgsNoAlt, span_buttons: spanButtons, h1_count: h1s.length, h1s, meta };
+})()
+```
 
 ## Still-open / optional
 - BreadcrumbList JSON-LD (no visible breadcrumbs on the storefront today).

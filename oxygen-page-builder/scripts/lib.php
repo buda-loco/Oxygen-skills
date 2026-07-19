@@ -249,6 +249,53 @@ function oxy_html(string $html, array $classes = []): array{ return oxy_code_el(
 function oxy_php(string $php, array $classes = []): array  { return oxy_code_el('OxygenElements\\PhpCode', 'php_code', $php, $classes); }
 
 // ---------------------------------------------------------------------------
+// class helpers (PROJECT RULE §4: every authored element carries its own class)
+// ---------------------------------------------------------------------------
+
+/**
+ * Authored content/containers that MUST carry a BEM/brand class (SKILL.md §4). Native widgets
+ * (Advancedslider/Wooproductslist/Product/FAQ/MenuBuilder/PostsLoop…), Component references,
+ * composite children (Advancedslide), and code nodes are class-optional → not in this set.
+ * Single source of truth for the auditor (`audit-classes.php`) and fixer (`fix-classes.php`).
+ */
+function oxy_needs_class(string $type): bool {
+    static $set = [
+        'EssentialElements\\Div' => 1, 'EssentialElements\\Section' => 1, 'EssentialElements\\Button' => 1,
+        'EssentialElements\\WrapperLink' => 1, 'OxygenElements\\Text' => 1, 'OxygenElements\\RichText' => 1,
+        'OxygenElements\\Image' => 1, 'OxygenElements\\ContainerLink' => 1, 'OxygenElements\\TextLink' => 1,
+        'OxygenElements\\Icon' => 1, 'OxygenElements\\Html5Video' => 1,
+    ];
+    return isset($set[$type]);
+}
+
+/** The node's authored plain class names (settings.advanced.classes). */
+function oxy_node_classes(array $node): array {
+    return $node['data']['properties']['settings']['advanced']['classes'] ?? [];
+}
+
+/** True if the node has ANY authored class — a plain class OR a native selector uuid (meta.classes). */
+function oxy_node_has_class(array $node): bool {
+    $p = $node['data']['properties'] ?? [];
+    return !empty($p['settings']['advanced']['classes']) || !empty($p['meta']['classes']);
+}
+
+/**
+ * Idempotently add a plain BEM/brand class to a node (settings.advanced.classes). Pass by reference.
+ * Returns true if it was added, false if already present. Does not touch native selector uuids.
+ */
+function oxy_ensure_class(array &$node, string $class): bool {
+    $class = ltrim(trim($class), '.');
+    if ($class === '') { return false; }
+    $ref =& $node['data']['properties']['settings']['advanced']['classes'];
+    if (!isset($ref) || !is_array($ref)) { $ref = []; }
+    if (in_array($class, $ref, true)) { unset($ref); return false; }
+    $ref[] = $class;
+    $ref = array_values($ref);
+    unset($ref);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // golden shapes (never hand-guess a complex element)
 // ---------------------------------------------------------------------------
 
@@ -445,7 +492,8 @@ function oxy_validate_tree_json(string $json, bool $checkSlugs = false): array {
 function oxy_selector(string $name, array $groups): array {
     return ['id' => oxy_uuid("sel:$name"), 'name' => ltrim($name, '.'), 'type' => 'class',
             'collection' => 'Default', 'children' => [], 'locked' => false,
-            'properties' => ['breakpoint_base' => $groups]];
+            // empty groups MUST serialize as {} not [] — io-ts rejects [] → builder "IO-TS decoding failed"
+            'properties' => ['breakpoint_base' => ($groups ?: new \stdClass())]];
 }
 
 /** Read the saved selectors, normalizing the store shape: saveSelectors() ACCEPTS

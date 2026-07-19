@@ -200,3 +200,19 @@ override / analytics; the Global Settings font system supersedes it for fonts.
   builder-editable but never applies. ⚠ Enabling `type:everywhere` + empty ruleGroups would hijack
   EVERY page. Templates have no public URL (404) — preview by copying the tree onto a throwaway page.
 - Convert a page: `wp_update_post(['ID'=>$id,'post_type'=>'oxygen_template'])` + set settings meta.
+
+## Variables (Oxygen 6 Variables feature) — GOLDEN-SAMPLED 2026-07-19
+Stored in option **`oxygen_variables_json_string`** — a SINGLE-encoded JSON array (NOT double-encoded
+like global settings). Collections list in `oxygen_variables_collections_json_string` (e.g. `["Collection 1"]`).
+Each variable:
+```json
+{ "id":"<uuid>", "type":"unit", "label":"sp-5", "cssVariableName":"sp-5",
+  "collection":"Collection 1", "value":{"number":20,"unit":"px","style":"20px"} }
+```
+- `cssVariableName` emits `--<name>` (no leading `--`). `type`: `unit` (value `{number,unit,style}`),
+  also `color`/`number`/`fontfamily`/`imageurl` (shapes not yet captured — golden-sample before use).
+- Write: `update_option('oxygen_variables_json_string', wp_json_encode($arr))` then
+  `\Breakdance\Render\generateCacheForGlobalSettings()`. Emits a `:root{--name:val}` block in the compiled CSS.
+- ⚠ Still to capture: how a SELECTOR/element design property REFERENCES a variable (the property-group
+  value shape when a control is bound to a variable). Golden-sample an element with a spacing bound to a
+  variable, then read its `design`/selector property group.
