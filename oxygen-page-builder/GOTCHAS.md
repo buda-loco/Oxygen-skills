@@ -711,3 +711,40 @@ Div→Container + selectors + real Images. The architecture works, but three thi
    overlay (caveat 2). Decorative tile images then get `alt=""`+`aria-hidden` (rule 6). To source the
    attachment id from a URL: `get_page_by_path('slug',OBJECT,'attachment')` or a `guid LIKE '%/file.jpg'`
    query.
+
+### Site-wide shared-primitive migration (reference-stylesheet class → Selector across all pages)
+Proven playbook (migrated `section`/`content-hero`/`section-heading`/`container` across ~55 pages, verified).
+Per class: **measure live → reconcile the selector to the real CSS → targeted-promote → flip Div→Container
+if it sets a reset prop → strip the base rule → verify computed on several pages (desktop + a ≤767 width)**.
+Back up the DB first; do ONE class at a time, safest first. Three non-obvious gotchas:
+
+1. **A Selector compiles a GLOBAL `.name{}` rule (0,1,0) that also styles PhpCode/HtmlCode-emitted
+   elements** — not just tree nodes carrying the selector via `meta.classes`. So when you strip the
+   reference-stylesheet `.breakdance .name{…}` rule, the kept PhpCode renderers (nav, footer, product
+   grids) that echo `class="name"` KEEP their styling from the selector's compiled rule. Verified:
+   `.section`/`.container` selectors style the PhpCode PLP `<section class="section container">`. This is
+   what makes the migration safe despite the sanctioned-PhpCode code nodes. (Tree-node Divs still need the
+   Div→Container flip so the selector's `max-width`/layout beats the `.bde-div` reset; raw PhpCode elements
+   aren't `.bde-div`, so no reset competes there.)
+2. **Reference CSS breakpoints rarely match Oxygen's built-ins.** A `@media (max-width:768px)` override
+   maps to Oxygen's **Phone Landscape** breakpoint = `max-width:767px` (see the responsive table in
+   PROPERTIES.md; built-ins are 1119/1023/767/479). Converting a responsive rule shifts the breakpoint ~1px
+   — visually identical, but note it. There is no native 768px breakpoint.
+3. **`oxy_save_selectors()` doesn't always recompile `oxy-selectors.css`.** After saving, a selector can be
+   in the store (`oxygen_oxy_selectors_json_string`) yet MISSING from the compiled
+   `uploads/oxygen/css/oxy-selectors.css` — so its rule silently doesn't exist and every element using it
+   loses that design (e.g. all containers went full-width). **Always verify the compiled rule after saving**
+   (`grep '\.name{' uploads/oxygen/css/oxy-selectors.css`); if absent, force it:
+   `\Breakdance\BreakdanceOxygen\Selectors\saveSelectors(json_encode([...]))` again +
+   `\Breakdance\Render\generateCacheForGlobalSettings()`.
+
+**Cascade-tie entanglement — why partial migrations regress.** The reference stylesheet leans on
+source-order tie-breaking between co-occurring same-specificity classes (`.post-body` overrides
+`.container`'s max-width; `.post-hero` overrides `.content-hero`; both are `.breakdance .x` = 0,2,0, later
+wins). Converting ONE of a co-occurring pair to a Selector drops it to (0,1,0), so the still-stylesheet
+partner (0,2,0) now wins — which may be right (the override was meant to win) or a regression (the converted
+class was meant to win). Migrate in cascade order (most-base classes like `container` first), or accept the
+resulting state and verify it. Classes that only override on a DIFFERENT axis are safe (e.g. `.section`
+sets padding-block, `.container` sets padding-inline → no conflict). Verify the whole site opens in the
+builder afterward (io-ts) — a batch `oxy_validate_tree_json()` over every `_oxygen_data` post + a real
+builder load of a sample per post type.
