@@ -430,8 +430,13 @@ function oxy_validate_tree_json(string $json, bool $checkSlugs = false): array {
             if (!is_int($id))            { $errors[] = 'node id missing/non-int' . ($parentId !== null ? " (under $parentId)" : ''); }
             elseif (isset($ids[$id]))    { $errors[] = "duplicate node id $id"; }
             else                         { $ids[$id] = true; }
-            if ($parentId !== null && (($n->_parentId ?? null) !== $parentId)) {
-                $errors[] = "node $id: _parentId should be $parentId, got " . var_export($n->_parentId ?? null, true);
+            // builder-saved GLOBAL BLOCK trees use string "<postId>-<nodeId>" _parentIds
+            // (observed after a builder re-save, 2026-07-20) — both forms are valid
+            $pid = $n->_parentId ?? null;
+            $pidOk = $pid === $parentId
+                || (is_string($pid) && preg_match('/(^|-)' . preg_quote((string) $parentId, '/') . '$/', $pid));
+            if ($parentId !== null && !$pidOk) {
+                $errors[] = "node $id: _parentId should be $parentId, got " . var_export($pid, true);
             }
             $type = $n->data->type ?? '';
             if ($parentId !== null) {
@@ -470,16 +475,18 @@ function oxy_validate_tree_json(string $json, bool $checkSlugs = false): array {
             $errors[] = "_nextNodeId ({$t->_nextNodeId}) must be > max node id ($max)";
         }
         // meta.classes uuids must exist in the global selectors option
-        $sel = json_decode((string) get_option('oxygen_oxy_selectors_json_string'), true);
-        $known = [];
-        foreach (($sel['selectors'] ?? []) as $s) { $known[$s['id'] ?? ''] = true; }
-        $walk2 = function ($n) use (&$walk2, &$warnings, $known) {
-            foreach (($n->data->properties->meta->classes ?? []) as $uuid) {
-                if (!isset($known[$uuid])) { $warnings[] = "node {$n->id}: meta.classes uuid '$uuid' not found in saved selectors (class won't emit)"; }
-            }
-            foreach ($n->children ?? [] as $c) { $walk2($c); }
-        };
-        if (function_exists('get_option')) { $walk2($r); }
+        // (store may be {selectors:[...]} OR a bare array — oxy_read_selectors normalizes both)
+        if (function_exists('get_option')) {
+            $known = [];
+            foreach (oxy_read_selectors()['selectors'] as $s) { $known[$s['id'] ?? ''] = true; }
+            $walk2 = function ($n) use (&$walk2, &$warnings, $known) {
+                foreach (($n->data->properties->meta->classes ?? []) as $uuid) {
+                    if (!isset($known[$uuid])) { $warnings[] = "node {$n->id}: meta.classes uuid '$uuid' not found in saved selectors (class won't emit)"; }
+                }
+                foreach ($n->children ?? [] as $c) { $walk2($c); }
+            };
+            $walk2($r);
+        }
     }
     return ['errors' => $errors, 'warnings' => $warnings];
 }
@@ -488,23 +495,71 @@ function oxy_validate_tree_json(string $json, bool $checkSlugs = false): array {
 // selectors (global classes) + templates
 // ---------------------------------------------------------------------------
 
-/** Selector ("class") object; $groups go under properties.breakpoint_base (see PROPERTIES.md). */
-function oxy_selector(string $name, array $groups): array {
+/**
+ * Selector ("class") object; $groups go under properties.breakpoint_base (see PROPERTIES.md).
+ * $customCss  — raw CSS with `:selector` placeholders, stored at breakpoint_base.custom_css.custom_css
+ *               (compiles verbatim after the class rule; hover/pseudo/descendant/@media all work —
+ *               GOTCHAS §specificity ladder).
+ * $breakpoints — extra per-breakpoint group maps as SIBLINGS of breakpoint_base, e.g.
+ *               ['breakpoint_phone_landscape' => ['layout' => [...]]] (compiles inside the media query).
+ */
+function oxy_selector(string $name, array $groups, string $customCss = '', array $breakpoints = []): array {
+    if ($customCss !== '') { $groups['custom_css'] = ['custom_css' => $customCss]; }
+    // empty groups MUST serialize as {} not [] — io-ts rejects [] → builder "IO-TS decoding failed"
+    $props = ['breakpoint_base' => ($groups ?: new \stdClass())];
+    foreach ($breakpoints as $bp => $g) { $props[$bp] = $g; }
     return ['id' => oxy_uuid("sel:$name"), 'name' => ltrim($name, '.'), 'type' => 'class',
             'collection' => 'Default', 'children' => [], 'locked' => false,
-            // empty groups MUST serialize as {} not [] — io-ts rejects [] → builder "IO-TS decoding failed"
-            'properties' => ['breakpoint_base' => ($groups ?: new \stdClass())]];
+            'properties' => $props];
+}
+
+/**
+ * Background-image group (selector `background` group / element background layers):
+ * resolves the attachment id from the URL (external-image fallback), cover + centered.
+ * Prepend overlay layers via $extraLayers (e.g. [['type'=>'color_overlay','color'=>'rgba(0,0,0,.45)']]).
+ */
+function oxy_bg_image(string $url, array $extraLayers = []): array {
+    if (!str_starts_with($url, 'http') && function_exists('home_url')) { $url = home_url($url); }
+    $id = function_exists('attachment_url_to_postid') ? attachment_url_to_postid($url) : 0;
+    $image = $id ? ['id' => $id, 'url' => $url, 'sizes' => ['full' => ['url' => $url]]]
+                 : ['id' => -1, 'type' => 'external_image', 'url' => $url];
+    return ['backgrounds' => array_merge($extraLayers, [[
+        'type' => 'image', 'image' => $image,
+        'background_size' => 'cover', 'background_position' => ['x' => 50, 'y' => 50],
+    ]])];
+}
+
+/**
+ * Flip every EssentialElements\Div in $nodes to OxygenElements\Container (type swap only —
+ * children/classes untouched). Container emits ZERO engine CSS, so plain (0,1,0) selectors win
+ * layout on it (GOTCHAS §Container vs Div). Returns the modified nodes; $count gets the flip count.
+ */
+function oxy_flip_divs_to_containers(array $nodes, ?int &$count = null): array {
+    $count = 0;
+    $walk = function (array $n) use (&$walk, &$count): array {
+        if (($n['data']['type'] ?? '') === 'EssentialElements\\Div') {
+            $n['data']['type'] = 'OxygenElements\\Container'; $count++;
+        }
+        $n['children'] = array_map($walk, $n['children'] ?? []);
+        return $n;
+    };
+    return array_map($walk, $nodes);
 }
 
 /** Read the saved selectors, normalizing the store shape: saveSelectors() ACCEPTS
  *  {selectors:[...],collections:[...]} but PERSISTS the bare selectors ARRAY (flat,
- *  verified 6.1.0) — readers must handle both. */
-function oxy_read_selectors(): array {
-    $d = json_decode((string) get_option('oxygen_oxy_selectors_json_string'), true) ?: [];
-    if (isset($d['selectors']) && is_array($d['selectors'])) {
-        return ['selectors' => $d['selectors'], 'collections' => $d['collections'] ?? ['Default']];
+ *  verified 6.1.0) — readers must handle both.
+ *  Memoized per process (the store is a large JSON blob and callers — validation,
+ *  promotion, uuid lookup — hit it in loops); oxy_save_selectors() refreshes the cache. */
+function oxy_read_selectors(bool $fresh = false): array {
+    static $cache = null;
+    if ($fresh || $cache === null) {
+        $d = json_decode((string) get_option('oxygen_oxy_selectors_json_string'), true) ?: [];
+        $cache = (isset($d['selectors']) && is_array($d['selectors']))
+            ? ['selectors' => $d['selectors'], 'collections' => $d['collections'] ?? ['Default']]
+            : ['selectors' => array_values(array_filter($d, 'is_array')), 'collections' => ['Default']];
     }
-    return ['selectors' => array_values(array_filter($d, 'is_array')), 'collections' => ['Default']];
+    return $cache;
 }
 
 /**
@@ -569,6 +624,32 @@ function oxy_save_selectors(array $newSelectors): void {
     \Breakdance\BreakdanceOxygen\Selectors\saveSelectors(
         json_encode(['selectors' => $selectors, 'collections' => $cur['collections'] ?? ['Default']])
     );
+    oxy_read_selectors(true); // refresh the memoized store
+}
+
+/**
+ * Validate the saved selectors STORE (validate-tree checks trees, not selectors).
+ * Catches: undecodable store, selectors missing id/name/properties, and breakpoint
+ * groups persisted as [] instead of {} (io-ts rejects [] → builder fails on EVERY page).
+ * Returns ['errors' => [...], 'warnings' => [...]].
+ */
+function oxy_validate_selectors(): array {
+    $errors = []; $warnings = [];
+    $raw = (string) get_option('oxygen_oxy_selectors_json_string');
+    if ($raw !== '' && json_decode($raw, true) === null) {
+        return ['errors' => ['selectors option is not valid JSON'], 'warnings' => []];
+    }
+    foreach (oxy_read_selectors()['selectors'] as $i => $s) {
+        $label = $s['name'] ?? "index $i";
+        if (empty($s['id']) || empty($s['name']) || !isset($s['properties'])) {
+            $errors[] = "selector $label: missing id/name/properties";
+        }
+    }
+    // {} vs [] is erased by assoc json_decode — the raw JSON is the only witness
+    if (preg_match_all('/"breakpoint_[a-z_]+":\s*\[\]/', $raw, $m)) {
+        $errors[] = count($m[0]) . ' breakpoint group(s) persisted as [] not {} — builder "IO-TS decoding failed" on every page';
+    }
+    return ['errors' => $errors, 'warnings' => $warnings];
 }
 
 /**

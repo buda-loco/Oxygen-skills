@@ -695,14 +695,13 @@ Div→Container + selectors + real Images. The architecture works, but three thi
    scoped operation, or leave the primitive as a reference-stylesheet class (legitimate Strategy B; the
    `.breakdance`-prefixed rule at (0,2,0) already ties/beats the reset). Check usage first:
    `SELECT post_id FROM wp_postmeta WHERE meta_key='_oxygen_data' AND meta_value LIKE '%classname%'`.
-2. **Some CSS can't live in a selector — it legitimately stays in the stylesheet (documented exception,
-   like RichText inner-tag typography).** Oxygen's design panel/selector groups can't express
-   **`inset`/`top`/`right`/`bottom` offsets, `z-index`, or `::before`/`::after` pseudo-elements**. So an
-   absolute-cover image (`position:absolute;inset:0;z-index:0`), a gradient overlay (`::after`), a gold
-   accent bar (`::before`), a CSS play-triangle (`::after`) all remain as `.breakdance .name{…}` rules in
-   the reference stylesheet even in a "design-in-selectors" build. Put everything the panel CAN express
-   (display/grid/flex/gap/aspect/size/object-fit/spacing/typography/background-color/position-keyword) in
-   the selector; keep only the inexpressible remainder in CSS. This is expected, not a failure.
+2. **[SUPERSEDED 2026-07-20 — see §Selector-conversion specificity ladder]** ~~Some CSS can't live in
+   a selector.~~ It can: the `position` group carries `top/right/bottom/left` offsets + `z_index`
+   (verified live), and everything else — `::before`/`::after` pseudo-elements, `:hover`, descendant
+   rules, inline `@media` — goes in the selector's **`custom_css`**
+   (`properties.breakpoint_base.custom_css.custom_css`, `:selector` placeholder). Nothing needs to
+   stay in the reference stylesheet for a design-in-selectors build except genuinely SHARED rules
+   (loop-context, cross-class groups) and RichText inner-tag typography.
 3. **Converting a fake-image `<span>` to a real `Image` in place** (rule 5 cleanup): mutate the node so
    it keeps its id + tree position — set `data.type='OxygenElements\\Image'`, copy
    `oxy_image($attId)['data']['properties']` onto it, then `meta.classes=[selectorUuid]`. Remove the
@@ -748,3 +747,44 @@ resulting state and verify it. Classes that only override on a DIFFERENT axis ar
 sets padding-block, `.container` sets padding-inline → no conflict). Verify the whole site opens in the
 builder afterward (io-ts) — a batch `oxy_validate_tree_json()` over every `_oxygen_data` post + a real
 builder load of a sample per post type.
+
+## Selector-conversion specificity ladder (verified 2026-07-20, component-block migration)
+
+When moving a class from the reference stylesheet into a registered Selector, the selector's group
+props compile as `.name{}` at **(0,1,0)** — three families of engine/theme rules beat that, and each
+has a fix that keeps the design ON the selector (in its `custom_css`):
+
+1. **Theme tag rules** `.breakdance h1/h2/h3/p{…}` (0,1,1) beat selector typography on Text headings
+   (font-size/letter-spacing/line-height survive in the tag rule). Fix: duplicate those declarations in
+   the selector's custom_css as `.breakdance :selector{…}` (0,2,0).
+2. **`.breakdance .oxy-text{margin:0}`** (0,2,0, loads after oxy-selectors.css) kills any margin a
+   selector sets on a Text element. Fix: `.breakdance .oxy-text:selector{margin:…}` (0,3,0).
+3. **Engine/`.bde-*` defaults at (0,3,0)** (e.g. `.breakdance .bde-advanced-tabs .bde-tabs__tab`)
+   beat `.breakdance :selector .bde-tabs__tab`. Fix: chain deeper —
+   `.breakdance :selector .bde-advanced-tabs .bde-tabs__tab` (0,4,0).
+
+Selector `custom_css` shape (verified compile): `properties.breakpoint_base.custom_css.custom_css` =
+raw CSS string; `:selector` is replaced with `.name` and the block is emitted verbatim AFTER the
+class rule — pseudo-elements (`::after` overlays), `:hover`, `.is-active`, descendant rules, and
+inline `@media(...){…}` all work there. Responsive breakpoint-sibling group overrides and
+`background.backgrounds[]` image layers are also verified live now — shapes in PROPERTIES.md
+(§Property groups, §Responsive breakpoints); helpers in lib.php:
+`oxy_selector($name, $groups, $customCss, $breakpoints)` and `oxy_bg_image()`.
+
+Third leg of the recipe = the **Div→Container flip** (§Container vs Div above; helper
+`oxy_flip_divs_to_containers()`) — additional proof: Container emits ZERO compiled engine CSS.
+Flip + selector groups + custom_css converted a full set of component Global Blocks to
+panel-editable with zero visual diff.
+
+## AdvancedTabs golden defaultChildren are BROKEN on Oxygen installs (verified 2026-07-20)
+
+`oxy_golden('EssentialElements\AdvancedTabs')` children (4× TabContent) contain a nested
+`EssentialElements\Image` — a slug NOT REGISTERED in Oxygen mode (the registered ones are
+`OxygenElements\Image` / `EssentialElements\Image2`) → renderer fatal + io-ts fail. This was the real
+cause of the "AdvancedTabs fatals inside a Global Block" blocker (misdiagnosed as JS enqueue —
+`tabs@1/advanced-tabs.js` actually enqueues FINE inside a Component placement, verified interactive).
+Recipe: keep the golden's AdvancedTabs props (`content.content.tabs` = titles), build TabContent
+children from the golden SHELL with `defaultChildren => []`, and put your own RichText inside each.
+Same trap likely applies to other composites whose demo children use `EssentialElements\Image` —
+inserting them via the real builder ALSO plants the invalid node (this broke a live product
+template once).

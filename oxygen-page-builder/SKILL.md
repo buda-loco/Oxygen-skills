@@ -163,14 +163,19 @@ small, auditable, and idempotent.
   reference CSS in the global CssCode node (comment-strip + `.breakdance`-prefix + `.bde-div` reset
   — GOTCHAS.md). Pixel-faithful; structure stays editable. This is how the original production site
   was built, porting an existing theme's stylesheet into Oxygen.
-- **Hybrid (recommended endpoint, verified 2026-07-17)** — EVERY element carries a BEM class;
-  the class is a registered SELECTOR holding the PAINT props (typography/colors/backgrounds/
-  spacing/borders/effects — panel-editable, tokens pass through verbatim), while STRUCTURAL css
-  (layout/position/media/pseudo/keyframes) stays in the reference stylesheet — it physically
-  cannot live on selectors (engine reset at 0,2,0 vs selectors at 0,1,0; GOTCHAS §selector-cascade).
-  Register selectors FIRST, then build trees through `oxy_promote_classes_to_selectors()` so class
-  names attach as meta.classes uuids. Rule: an element without a class gives the user no
-  design-panel handle — never ship one.
+- **Hybrid (recommended endpoint — upgraded 2026-07-20, verified at scale)** — EVERY element
+  carries a BEM class; the class is a registered SELECTOR holding ALL of its design: paint AND
+  layout/position groups, responsive `breakpoint_*` sibling overrides, and pseudo/hover/descendant/
+  media leftovers in the selector's `custom_css` (`oxy_selector($name, $groups, $customCss,
+  $breakpoints)`). Layout wrappers must be `OxygenElements\Container`, not `EssentialElements\Div`
+  (`oxy_flip_divs_to_containers()`) — the `.bde-div` engine reset (0,2,0) beats selectors (0,1,0);
+  Container has NO engine CSS, so selectors win. When a theme tag rule / `.oxy-text` reset /
+  `.bde-*` default still outranks a group prop, escalate that declaration inside custom_css per
+  GOTCHAS §specificity ladder. Register selectors FIRST, then build trees through
+  `oxy_promote_classes_to_selectors()` so class names attach as meta.classes uuids. Only genuinely
+  SHARED rules (loop-context, cross-class groups) and RichText inner-tag typography stay in the
+  reference stylesheet. Rule: an element without a class gives the user no design-panel handle —
+  never ship one.
 
 ## Where to look
 | Need | File |

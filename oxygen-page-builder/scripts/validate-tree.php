@@ -33,6 +33,10 @@ $res = oxy_validate_tree_json($treeJson, true);
 foreach ($res['errors']   as $e) { echo "ERROR:   $e\n"; }
 foreach ($res['warnings'] as $w) { echo "warning: $w\n"; }
 
+// the selectors STORE can break the builder site-wide independently of any tree
+$selRes = oxy_validate_selectors();
+foreach ($selRes['errors'] as $e) { echo "ERROR:   selectors store: $e\n"; $res['errors'][] = "selectors: $e"; }
+
 // engine must be able to read it back
 $tree = \Breakdance\Data\get_tree($postId);
 if ($tree === false) { echo "ERROR:   \\Breakdance\\Data\\get_tree() returned false — renderer cannot read this tree\n"; $res['errors'][] = 'get_tree false'; }

@@ -106,6 +106,11 @@ e.g. `"44px"`); colors/keywords are plain strings; `font_weight` is a plain numb
   `aspect_ratio` = raw ratio string WITH spaces (`"16 / 9"`, `"1"`) or `"custom"` +
   `aspect_ratio_custom={"width":16,"height":9}` (plain numbers); `object_fit` = `"fill"|"contain"|"cover"|"none"|"scale-down"`
 - **effects**: `opacity`, `box_shadow[]`, `transition[]`, `cursor`
+- **position**: `position` (keyword), `top{}`/`right{}`/`bottom{}`/`left{}` offsets, `z_index` (plain
+  number) — verified live (absolute-cover overlays, z-stacking from the selector)
+- **custom_css**: `custom_css.custom_css` = raw CSS string with `:selector` placeholders, emitted
+  VERBATIM after the class rule — pseudo-elements, `:hover`, descendant rules, inline `@media` all
+  work (GOTCHAS §specificity ladder for when you NEED it and which prefix wins)
 
 Worked example — compiles to `.btn{background:#0f766e;color:#000;text-transform:uppercase;letter-spacing:2px;padding:14px 30px;border-radius:0}`:
 ```json
@@ -140,11 +145,10 @@ v6.1.0); Oxygen is **desktop-first** (base = no media query, others compile to `
 Per-breakpoint values sit as **sibling keys of `breakpoint_base`** in the same object — e.g. element
 defaults use `slides_per_view: {breakpoint_base: 4}` and options like
 `one_per_view_at: 'breakpoint_phone_landscape'`. For selector property groups the same pattern applies
-(`properties: {breakpoint_base: {...}, breakpoint_phone_landscape: {...}}`). ⚠ The original build did
-all responsive styling in raw CSS media queries, so no live selector override was captured — before
-writing one at scale, build a single responsive override in the real builder and read it back
-(golden-sample workflow). Custom breakpoints can be added in the builder's preferences; ids follow the
-same `breakpoint_*` convention.
+(`properties: {breakpoint_base: {...}, breakpoint_phone_landscape: {...}}`) — **verified live at scale
+2026-07-20** (grid column counts, gaps, min-heights compiled into the right max-width queries during a
+full component-library conversion; write them via `oxy_selector(...,$breakpoints)`). Custom breakpoints
+can be added in the builder's preferences; ids follow the same `breakpoint_*` convention.
 
 ## Global Settings (brand: colors, fonts, section width)
 

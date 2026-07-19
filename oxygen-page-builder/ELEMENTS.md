@@ -10,6 +10,7 @@ $e = current(array_filter(\Breakdance\Elements\get_elements_for_builder(), fn($x
 $e=(array)$e; $props=$e['defaultProperties']; $kids=$e['defaultChildren']; // golden, builder-valid
 ```
 `defaultChildren` gives the full nested tree for composites (Tabs→TabLink/TabContent, Accordion, Slider, Product Builder, Menu Builder). Copy it, swap the content, inject. No harvest needed.
+⚠ **Goldens can nest UNREGISTERED slugs** — some demo children contain `EssentialElements\Image`, which is hidden/unregistered in Oxygen mode → renderer fatal + io-ts fail (`oxy_write_tree` catches it via `checkSlugs`). Rebuild composite children from the golden SHELLS (`defaultChildren => []`) and insert your own content — GOTCHAS §AdvancedTabs golden defaultChildren.
 
 Below: `▸` = composite (has `defaultChildren`). `slug` is what goes in `node.data.type`.
 
@@ -27,7 +28,7 @@ Below: `▸` = composite (has `defaultChildren`). `slug` is what goes in `node.d
 - Gallery `EssentialElements\Gallery` (binds to a Gallery data point) · Video `EssentialElements\Video` · HTML5 Video `OxygenElements\Html5Video` · Lottie `EssentialElements\LottieAnimation` · SVG Icon `OxygenElements\SvgIcon` · Icon `EssentialElements\Icon`
 
 ## Interactive (▸ = native, editable — prefer over custom JS)
-- ▸ Tabs `EssentialElements\Tabs` · ▸ Advanced Tabs `EssentialElements\AdvancedTabs` (children ▸`TabLink` = labels, ▸`TabContent` = panels)
+- ▸ Tabs `EssentialElements\Tabs` · ▸ Advanced Tabs `EssentialElements\AdvancedTabs` (children ▸`TabLink` = labels, ▸`TabContent` = panels) — ⚠ its golden `defaultChildren` nest an unregistered `EssentialElements\Image` (fatal); use empty TabContent shells + your own content (GOTCHAS)
 - ▸ Advanced Accordion `EssentialElements\AdvancedAccordion` (+ `AccordionContent`) · Frequently Asked Questions `EssentialElements\FrequentlyAskedQuestions`
 - ▸ Advanced Slider `EssentialElements\Advancedslider` (+ ▸`Advancedslide`) · Basic Slider `EssentialElements\Basicslider`
 - ▸ Content Toggle `EssentialElements\ContentToggle` (+ `ContentToggleContent`) · ▸ Content Reveal `EssentialElements\ContentReveal` · Tooltip `EssentialElements\Tooltip` · Popup `EssentialElements\Popup` · Countdown Timer `EssentialElements\CountdownTimer` · Back To Top `EssentialElements\BackToTop`
@@ -70,5 +71,5 @@ Each element dir: `{element.php, html.twig, default.css, css.twig}`.
 ## Takeaways for this project
 - The PDP/PLP/cart/checkout can ALL be native WC elements (or their Builder composites) — no PHP needed.
 - The header/footer nav should be **Menu Builder**, not a PhpCode nav.
-- Custom spec tabs → **Advanced Tabs** (`AdvancedTabs`); pull its `defaultChildren` for the exact shape.
+- Custom spec tabs → **Advanced Tabs** (`AdvancedTabs`); use its golden props + EMPTY TabContent shells (⚠ its stock `defaultChildren` nest an unregistered `EssentialElements\Image` → fatal; GOTCHAS).
 - For ANY element, fetch `defaultProperties`/`defaultChildren` via `get_elements_for_builder()` before building.
