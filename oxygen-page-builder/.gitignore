@@ -1,0 +1,5 @@
+# machine-specific plugin deployment targets (never commit local paths / brands)
+scripts/sync-targets.local
+
+# OS noise
+.DS_Store
