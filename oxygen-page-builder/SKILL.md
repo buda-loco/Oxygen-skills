@@ -66,9 +66,12 @@ render on the front-end yet fail to open in the builder. Never guess shapes — 
      `custom_alt` does NOT emit `alt=""` — the renderer omits it; force it via
      `settings.advanced.attributes = [{name:'alt',value:''},{name:'aria-hidden',value:'true'}]`.
      ⚠ A missing media-library alt is the #1 cause of alt-less images — check the attachment, not just the node.
-   - **Interactive elements must be real controls:** a clickable CTA is a `Button`/`TextLink`/
-     `ContainerLink` (`<a>`/`<button>`), NEVER a `Text`/`<span>` styled as a button (not focusable, not
-     announced, no href). If you see `<span class="btn">`, it's a bug.
+   - **Interactive elements must be real controls:** a clickable CTA must render a semantic, focusable
+     anchor — use the **`Button`** element (`oxy_button`), the ONLY one whose root is a true `<a href>`.
+     ⚠ `TextLink` and `ContainerLink` render a `<span href>` + `breakdance-link` JS (clickable but NOT a
+     focusable/announced anchor), and a `Text`/`<span class="btn">` has no href at all — both fail a11y.
+     See GOTCHAS §accessible-link (incl. the styling caveat: `btn` classes land on Button's wrapper div,
+     so target `.btn.bde-button .bde-button__button`). If you see `<span class="btn">`, it's a bug.
    - **Headings:** exactly ONE `<h1>` per page (slider heroes emit one H1 per slide — demote to `h2`
      + add one `.sr-only` H1; see SEO.md); heading levels nest sensibly (no h2→h4 jumps).
    - **SEO structures present:** `<title>`, `meta[name=description]`, OpenGraph, `link[rel=canonical]`,

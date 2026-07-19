@@ -70,9 +70,30 @@ a tree can render on the front-end yet fail to open in the builder.
 `scripts/validate-tree.php` checks all of this. Final proof is always opening
 `http://example.local?oxygen=builder&id=<ID>` (io-ts runs client-side; nothing server-side can fully prove it).
 
-## §wrapper-link-href — WrapperLink outputs `href="#"` (use ContainerLink)
-To wrap arbitrary children in a link, use **`OxygenElements\ContainerLink`**, NOT
-`EssentialElements\WrapperLink`. ContainerLink's `html.twig` is `%%CHILDREN%%` and its
+## §accessible-link — Button is the ONLY element that renders a real `<a>` (verified 2026-07-19)
+**For a semantic, keyboard-focusable link/CTA, use `EssentialElements\Button` (`oxy_button`).** It's the
+only link-type element whose rendered root is a true anchor: `<div class="bde-button …"> ><a
+class="bde-button__button" href> ><span class="button-atom__text">TEXT</span></a>`. The `<a>` is
+focusable, announced as a link, and navigates without JS.
+- ⚠ **`OxygenElements\TextLink` and `EssentialElements\TextLink` both render a `<span href>`** (plus a
+  `breakdance-link` class + JS click handler), NOT an `<a>`. So does **`OxygenElements\ContainerLink`**
+  (`<span class="oxy-container-link" href>`). They're clickable via JS but are **not** semantic/focusable
+  anchors — an accessibility fail for a CTA. A "fake button" `Text`/`<span class="btn">` is worse still
+  (no href at all). See project rule 6.
+- **Styling caveat:** with Button, your `advanced.classes` (e.g. `btn btn--ghost`) land on the OUTER
+  `.bde-button` wrapper div — NOT the visible `<a>`. So brand button CSS must target the anchor:
+  neutralize the wrapper (`.btn.bde-button{background:none!important;border:0!important;padding:0!important}`)
+  and style `.btn.bde-button .bde-button__button{…}` (+ `.button-atom__text{color:inherit}` so the label
+  colour follows). Scope to `.bde-button` so plain non-Button `.btn` elements are untouched.
+- Use **ContainerLink** only when you must wrap ARBITRARY CHILD ELEMENTS in a click target (logo→home,
+  image card, whole-tile link) and semantic-anchor focus isn't required — see §wrapper-link-href for its
+  working shape. For a text/label CTA, prefer Button.
+
+## §wrapper-link-href — WrapperLink outputs `href="#"` (ContainerLink renders a `<span href>`, not `<a>`)
+To wrap arbitrary children in a click target, use **`OxygenElements\ContainerLink`**, NOT
+`EssentialElements\WrapperLink`. ⚠ Note ContainerLink renders a **`<span>`** (+ `breakdance-link` JS),
+not a semantic `<a>` — fine for a clickable card, but for a focusable/semantic link use Button
+(§accessible-link). ContainerLink's `html.twig` is `%%CHILDREN%%` and its
 render reads href from **`content.content.url`** (string) + target from
 `content.content.open_in_new_tab` (bool → `_blank`/`_self`). WrapperLink's
 `defaultProperties` also advertise `content.content.url`, but that key does NOT render an
