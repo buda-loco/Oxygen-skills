@@ -3,17 +3,18 @@
  * Plugin Name:  Oxy Admin Views — Cards ⇄ List
  * Description:  Adds a card-grid view (big featured image) alongside the normal
  *               list table on image-driven post types, with vertical/horizontal
- *               layout and fill/fit image options. Remembers each admin's choices
- *               per post type. Complements ACF + core WordPress.
- * Version:      1.2.0
+ *               layout and fill/fit image options, plus drag-to-reorder (menu_order)
+ *               in BOTH views. Remembers each admin's choices per post type.
+ *               Complements ACF + core WordPress.
+ * Version:      1.3.0
  * Author:       (your studio)
  * License:      GPL-2.0-or-later
  *
  * Reusable + de-branded: enable it for any set of post types via the
  * `oxy_admin_views_post_types` filter (defaults to every custom, image-driven
  * CPT). No per-type code. Per-type defaults via `oxy_admin_views_default_{key}`.
- * Sibling standard: the featured-image list column (df-design-system/content.php
- * · oxygen skill scripts/examples/admin-thumb-columns.php).
+ * Sibling standard: the featured-image list column example
+ * (scripts/examples/admin-thumb-columns.php).
  *
  * @package Oxy_Admin_Views
  */
@@ -94,15 +95,139 @@ add_action('wp_ajax_' . NONCE, function (): void {
     wp_send_json_error();
 });
 
+/* ============================================================================
+ * Drag-to-reorder (menu_order) — works in BOTH the list table and the card grid.
+ * menu_order is the usual front-end sort key for these hand-curated CPTs, so a
+ * drop here just IS the public order — we only write menu_order + flush caches;
+ * no front-end code changes. Generic: keys off types(), no per-site specifics.
+ *
+ *   list <tr id="post-N">  /  card [data-id=N]
+ *        │  drag (jQuery UI Sortable — a dedicated handle, so links stay clickable)
+ *        ▼  POST admin-ajax { action, _ajax_nonce, pt, ids[] }
+ *   nonce? ─no─▶ die    edit_posts? ─no─▶ 403    pt ∈ types()? ─no─▶ 400
+ *        │yes                 │yes                      │yes
+ *        └──────────┬─────────┴───────────┬────────────┘
+ *                   ▼  reorder_apply(pt, ids)
+ *      $wpdb UPDATE menu_order = position WHERE ID=id AND post_type=pt ; clean_post_cache(id)
+ * ==========================================================================*/
+
+/**
+ * Renumber menu_order to match $ids (0..N). Touches ONLY posts of $pt.
+ * Direct $wpdb write on purpose: a pure ordering column doesn't need
+ * wp_update_post's save_post/revision/listener churn — but because we bypass the
+ * ORM we must clean_post_cache() each row by hand. Returns how many ids we saw.
+ */
+function reorder_apply(string $pt, array $ids): int
+{
+    global $wpdb;
+    $ids = array_values(array_filter(array_map('absint', $ids)));
+    foreach ($ids as $position => $id) {
+        $wpdb->update($wpdb->posts, ['menu_order' => $position], ['ID' => $id, 'post_type' => $pt]);
+        clean_post_cache($id);
+    }
+    return count($ids);
+}
+
+/**
+ * The list request is "canonical" (safe to reorder) only when it shows the FULL
+ * menu_order list — no search / month / status / taxonomy filter and no other
+ * sort column. Dragging a filtered SUBSET would silently renumber the global
+ * menu_order wrong, so drag is disabled there. Pure ($_GET-only) so it's unit
+ * testable without a screen.
+ */
+function is_canonical_request(string $pt): bool
+{
+    if (!empty($_GET['s']) || !empty($_GET['m'])) {
+        return false;
+    }
+    $orderby = (string) ($_GET['orderby'] ?? '');
+    if ($orderby !== '' && $orderby !== 'menu_order') {
+        return false;
+    }
+    $status = (string) ($_GET['post_status'] ?? '');
+    if ($status !== '' && $status !== 'all') {
+        return false;
+    }
+    foreach (get_object_taxonomies($pt) as $tax) {
+        if (!empty($_GET[$tax])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** Drag allowed = our screen + editor caps + canonical (unfiltered) request. */
+function reorderable(): bool
+{
+    $pt = current_pt();
+    if ($pt === '') {
+        return false;
+    }
+    $obj = get_post_type_object($pt);
+    if (!$obj || !current_user_can($obj->cap->edit_posts ?? 'edit_posts')) {
+        return false;
+    }
+    return is_canonical_request($pt);
+}
+
+/**
+ * Make our admin lists the canonical, reorderable view: sort by menu_order and
+ * show every post (these curated CPTs are small) so a drag can reach anywhere.
+ * Respects a user-chosen sort column — drag is simply off in that case.
+ *   is_admin ∧ main_query ∧ post_type ∈ types() ∧ orderby ∈ {'', menu_order}
+ *        └─▶ orderby=menu_order ASC, posts_per_page=-1
+ */
+add_action('pre_get_posts', function (\WP_Query $q): void {
+    if (!is_admin() || !$q->is_main_query()) {
+        return;
+    }
+    $pt = $q->get('post_type');
+    if (!is_string($pt) || $pt === '' || !in_array($pt, types(), true)) {
+        return;
+    }
+    $orderby = $q->get('orderby');
+    if ($orderby === '' || $orderby === 'menu_order') {
+        $q->set('orderby', 'menu_order');
+        $q->set('order', 'ASC');
+        $q->set('posts_per_page', -1);
+    }
+});
+
+/** Persist a drag (nonce + editor capability + type guarded). */
+add_action('wp_ajax_' . NONCE . '_reorder', function (): void {
+    check_ajax_referer(NONCE);
+    $pt = sanitize_key((string) ($_POST['pt'] ?? ''));
+    if ($pt === '' || !in_array($pt, types(), true)) {
+        wp_send_json_error(['message' => 'bad post type'], 400);
+    }
+    $obj = get_post_type_object($pt);
+    if (!$obj || !current_user_can($obj->cap->edit_posts ?? 'edit_posts')) {
+        wp_send_json_error(['message' => 'forbidden'], 403);
+    }
+    $ids = (array) ($_POST['ids'] ?? []);
+    if (!$ids) {
+        wp_send_json_error(['message' => 'no ids'], 400);
+    }
+    wp_send_json_success(['updated' => reorder_apply($pt, $ids)]);
+});
+
 /** Tag <body> with the active view + orientation + fit so CSS renders flash-free. */
 add_filter('admin_body_class', function (string $classes): string {
     $pt = current_pt();
     if ($pt !== '') {
         $classes .= ' oxy-av oxy-av--' . pref($pt, 'view')
                   . ' oxy-av-o--' . pref($pt, 'orient')
-                  . ' oxy-av-f--' . pref($pt, 'fit');
+                  . ' oxy-av-f--' . pref($pt, 'fit')
+                  . (reorderable() ? ' oxy-av--reorderable' : '');
     }
     return $classes;
+});
+
+/** jQuery UI Sortable (bundled in wp-admin) powers the drag on our screens. */
+add_action('admin_enqueue_scripts', function (): void {
+    if (current_pt() !== '') {
+        wp_enqueue_script('jquery-ui-sortable');
+    }
 });
 
 /** Styles for the segmented controls + card grid (only on our list screens). */
@@ -190,6 +315,23 @@ add_action('admin_head', function (): void {
       border-right:1px solid #dcdcde}
     body.oxy-av-o--horizontal .oxy-av-card__body{justify-content:center}
     body.oxy-av-o--horizontal .oxy-av-card__actions{margin-top:8px}
+
+    /* -- drag-to-reorder (list rows + cards) -- */
+    .oxy-av-drag{cursor:grab;color:#a7aaad;display:inline-flex;vertical-align:middle;margin-right:6px}
+    .oxy-av-drag:active{cursor:grabbing}
+    .oxy-av-drag:hover{color:#50575e}
+    .oxy-av-drag .dashicons{font-size:18px;width:18px;height:18px;line-height:18px}
+    /* card handle pinned above the full-card overlay link so the card is draggable */
+    .oxy-av-card .oxy-av-drag{position:absolute;top:6px;left:6px;z-index:3;margin:0;
+      width:26px;height:26px;align-items:center;justify-content:center;
+      background:rgba(255,255,255,.92);border:1px solid #dcdcde;border-radius:5px;
+      box-shadow:0 1px 2px rgba(0,0,0,.08)}
+    .oxy-av-placeholder{outline:2px dashed #2271b1;outline-offset:-2px;background:#f0f6fc!important}
+    tr.oxy-av-placeholder > *{visibility:hidden}
+    .ui-sortable-helper{box-shadow:0 8px 24px rgba(0,0,0,.18)}
+    .oxy-av-saving{opacity:.55;pointer-events:none;transition:opacity .1s}
+    .oxy-av-reorder-hint{color:#646970;font-size:12px;font-style:italic;margin:8px 0 0}
+    body:not(.oxy-av--reorderable) .oxy-av-drag{display:none}
     </style>';
 });
 
@@ -221,7 +363,7 @@ add_action('admin_footer', function (): void {
         // 'large' so FILL/cover stays crisp when the frame is wide
         $img    = get_the_post_thumbnail($id, 'large', ['alt' => '']);
 
-        echo '<div class="oxy-av-card" role="listitem">';
+        echo '<div class="oxy-av-card" role="listitem" data-id="' . $id . '">';
         if ($edit) {
             echo '<a class="oxy-av-card__link" href="' . esc_url($edit) . '" tabindex="-1" aria-hidden="true">'
                . esc_html($title) . '</a>';
@@ -361,3 +503,101 @@ add_action('admin_footer', function (): void {
     </script>
     <?php
 });
+
+/**
+ * Drag wiring — runs at priority 11 so the card grid (injected by the priority-10
+ * footer script above) already exists. Same handler drives both containers: the
+ * list <tbody id="the-list"> of <tr>, and the <div id="oxy-av-grid"> of cards.
+ * A dedicated grip handle initiates the drag, so row/card links stay clickable
+ * (the card's whole surface is an overlay <a>, so it MUST have a handle).
+ */
+add_action('admin_footer', function (): void {
+    if (current_pt() === '') {
+        return;
+    }
+    if (!reorderable()) {
+        // On our screen but filtered/sorted: say why drag is off, so it doesn't look broken.
+        $hint = esc_js(__('Reordering is paused while the list is filtered, searched or sorted — clear those to drag.', 'oxy-admin-views'));
+        echo "<script>(function(){var h=document.querySelector('.wrap .wp-heading-inline');"
+           . "if(!h||document.querySelector('.oxy-av-reorder-hint'))return;var p=document.createElement('p');"
+           . "p.className='oxy-av-reorder-hint';p.textContent='{$hint}';h.parentNode.insertBefore(p,h.nextSibling);})();</script>";
+        return;
+    }
+    $cfg = [
+        'pt'     => current_pt(),
+        'ajax'   => admin_url('admin-ajax.php'),
+        'nonce'  => wp_create_nonce(NONCE),
+        'action' => NONCE . '_reorder',
+        'drag'   => __('Drag to reorder', 'oxy-admin-views'),
+    ];
+    ?>
+    <script>
+    jQuery(function ($) {
+        var C = <?php echo wp_json_encode($cfg); ?>;
+
+        function idOf(el) {
+            if (el.dataset && el.dataset.id) { return parseInt(el.dataset.id, 10); }
+            var m = /(?:^|\s)post-(\d+)/.exec(el.id || '');
+            return m ? parseInt(m[1], 10) : 0;
+        }
+        function addHandle(el, host) {
+            if (el.querySelector('.oxy-av-drag')) { return; }
+            var h = document.createElement('span');
+            h.className = 'oxy-av-drag';
+            h.title = C.drag;
+            h.setAttribute('aria-hidden', 'true');
+            h.innerHTML = '<span class="dashicons dashicons-menu"></span>';
+            host.insertBefore(h, host.firstChild);
+        }
+        function persist($c, itemSel) {
+            var ids = $c.children(itemSel).map(function () { return idOf(this); }).get()
+                        .filter(function (n) { return n > 0; });
+            if (!ids.length) { return; }
+            var fd = new FormData();
+            fd.append('action', C.action);
+            fd.append('_ajax_nonce', C.nonce);
+            fd.append('pt', C.pt);
+            ids.forEach(function (id) { fd.append('ids[]', id); });
+            $c.addClass('oxy-av-saving');
+            fetch(C.ajax, { method: 'POST', credentials: 'same-origin', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function () { $c.removeClass('oxy-av-saving'); })
+                .catch(function () { location.reload(); }); // fall back to a truthful view
+        }
+
+        var base = { handle: '.oxy-av-drag', opacity: 0.85,
+                     placeholder: 'oxy-av-placeholder', forcePlaceholderSize: true };
+
+        // LIST — grip in the title cell; the row's Edit/View links keep working.
+        var $list = $('#the-list');
+        if ($list.children('tr').length) {
+            $list.children('tr').each(function () {
+                var cell = this.querySelector('td.column-title, td.title')
+                        || this.querySelector('td:not(.check-column):not(.hidden)');
+                if (cell) { addHandle(this, cell); }
+            });
+            $list.sortable($.extend({}, base, {
+                items: '> tr', axis: 'y',
+                helper: function (e, tr) { // keep cell widths while dragging a row
+                    var $orig = tr.children();
+                    var $clone = tr.clone();
+                    $clone.children().each(function (i) { $(this).width($orig.eq(i).width()); });
+                    return $clone;
+                },
+                update: function () { persist($list, '> tr'); }
+            }));
+        }
+
+        // CARDS — grip pinned above the full-card overlay link.
+        var $grid = $('#oxy-av-grid');
+        if ($grid.length) {
+            $grid.children('.oxy-av-card').each(function () { addHandle(this, this); });
+            $grid.sortable($.extend({}, base, {
+                items: '> .oxy-av-card',
+                update: function () { persist($grid, '> .oxy-av-card'); }
+            }));
+        }
+    });
+    </script>
+    <?php
+}, 11);
