@@ -1,57 +1,106 @@
-# Oxygen 6 Builder — a Claude Code skill (+ field guide)
+# Oxygen 6 Builder — a Claude Code skill
 
-**Build and edit [Oxygen 6](https://oxygenbuilder.com/) WordPress pages with plain English — or with a few lines of PHP — instead of clicking around the visual builder.**
+**Build and fix [Oxygen 6](https://oxygenbuilder.com/) pages by just asking, in plain English.**
 
-This is a [Claude Code](https://claude.com/claude-code) skill that teaches the AI how Oxygen 6 *actually* stores a page, so it can create pages, fix broken layouts, and match your brand without guessing. It's also a standalone reference (docs + a small PHP toolbox) you can use on your own.
+> *"Build a Financing page with an intro, an FAQ accordion, and a contact button."*
+>
+> *"My page won't open in the builder anymore. Fix it."*
+>
+> *"Style the WooCommerce checkout to match my brand."*
 
----
+This teaches [Claude Code](https://claude.com/claude-code) how Oxygen 6 actually works underneath, so it builds pages that open properly, match your design, and don't quietly break the rest of your site.
 
-## Why this exists
-
-Oxygen 6 is a **complete rewrite** on the Breakdance engine. Every old Oxygen tutorial, snippet, and StackOverflow answer (`ct_section`, `ct_id`, shortcodes) is now **wrong**. Worse: a page's design lives in a database field as a strict data structure, and the builder silently refuses to open anything shaped even slightly wrong ("IO-TS decoding failed").
-
-So AI assistants — and humans — tend to *guess*, and quietly break things.
-
-This skill removes the guessing. Everything in it was **verified against the live plugin (v6.1.0)**: the exact shapes the builder accepts, the full element list, and — the most valuable part — a long list of traps that fail silently, with the fix for each.
+Not using Claude? It's also a written field guide and a small PHP toolbox you can use on your own — jump to [working by hand](#working-by-hand).
 
 ---
 
-## Quick start (with Claude Code)
+## Install
 
 ```bash
 git clone https://github.com/buda-loco/Oxygen-skills.git
-cp -R Oxygen-skills/oxygen-page-builder ~/.claude/skills/     # all projects
-# …or into <your-project>/.claude/skills/ for one project
+cp -R Oxygen-skills/oxygen-page-builder ~/.claude/skills/
 ```
 
-That's it. Next time you're working on an Oxygen site, just ask — the skill loads automatically.
+That's it. The skill loads by itself whenever you're working on an Oxygen site — no command to remember.
 
-### Things you can now ask Claude
-
-- *"Build a Financing page in Oxygen with an intro, an FAQ accordion, and a contact button."*
-- *"My page won't open in the builder — it says IO-TS decoding failed. Fix it."*
-- *"Style the WooCommerce cart and checkout to match my brand."*
-- *"Turn my blog archive into a native, editable loop with clickable cards."*
-- *"This CSS isn't applying to a WooCommerce element — why?"* (spoiler: it's [a famous trap](oxygen-page-builder/GOTCHAS.md))
+*(Want it for one project only? Copy it into `your-project/.claude/skills/` instead.)*
 
 ---
 
-## Prefer to work by hand?
+## What you can ask for
 
-The docs are a plain field guide, and the PHP toolbox works from any wp-cli context:
+**Building pages**
+- "Create an About page with a hero, three feature columns, and a contact form."
+- "Make a 404 page and a search results page that match the rest of the site."
+- "Turn this Word document into a page, with each heading and paragraph editable in the builder."
+
+**When something's broken**
+- "My page says *IO-TS decoding failed* and won't open. Fix it."
+- "This CSS isn't applying to my WooCommerce cart and I can't see why."
+- "The buttons on this page aren't clickable links — sort that out."
+
+**Your shop**
+- "Restyle the product page, cart and checkout to match my brand."
+- "Put a filterable product grid on the category pages."
+
+**Blog and dynamic content**
+- "Turn my blog archive into an editable loop with clickable cards."
+- "Add a 'latest posts' block to the bottom of every product page."
+
+**Brand and polish**
+- "Set my brand colours and fonts everywhere, so they show up in the builder's colour picker."
+- "Check this page for accessibility and SEO problems, then fix them."
+
+A guiding principle runs through all of it: **everything Claude builds stays editable by you in the visual builder.** No page ends up as a lump of code you can't click on.
+
+---
+
+## Why this is needed
+
+**Oxygen 6 was rebuilt from scratch.** It's a completely different engine from Oxygen 3 and 4, which means most tutorials, code snippets and forum answers you'll find are now simply wrong — and AI assistants confidently repeat them.
+
+**Your design lives in the database, not in files,** stored in a very particular format. Get one small detail wrong and the builder refuses to open the page — the infamous *"IO-TS decoding failed"* — even though the page still looks perfectly fine to visitors. That gap is what makes it so easy to break something without noticing.
+
+**Many of Oxygen's failures are silent.** Brand CSS that matches nothing. Buttons that look like links but aren't. Images with no alt text. Nothing errors; it just quietly doesn't work.
+
+So this skill was built the slow way: every shape, element and trap in it was **checked against a running Oxygen 6.1 install**, not guessed. The most valuable part isn't the how-to — it's the long list of things that fail silently, each with its fix.
+
+---
+
+## What's inside
+
+Everything lives in [`oxygen-page-builder/`](oxygen-page-builder/).
+
+| File | What it's for |
+|---|---|
+| [**SKILL.md**](oxygen-page-builder/SKILL.md) | Start here — the core rules and the build-then-verify workflow. |
+| [**RECIPES.md**](oxygen-page-builder/RECIPES.md) | Worked examples: pages, shop, cart, checkout, search, 404, blog, dynamic content. |
+| [**GOTCHAS.md**](oxygen-page-builder/GOTCHAS.md) | The trap list — symptom, cause, fix. This is where the saved hours live. |
+| [**PROPERTIES.md**](oxygen-page-builder/PROPERTIES.md) | The exact data shapes, for when you need to write them yourself. |
+| [**ELEMENTS.md**](oxygen-page-builder/ELEMENTS.md) | All 165 built-in elements and what each one is for. |
+| [**SEO.md**](oxygen-page-builder/SEO.md) | What WordPress gives you free, and a drop-in helper for the rest. |
+| [**scripts/**](oxygen-page-builder/scripts/) | The PHP toolbox, a validator, and a folder of worked example scripts. |
+
+---
+
+## Working by hand
+
+If you'd rather write the code yourself, the toolbox runs anywhere wp-cli does:
 
 ```bash
-export OXY_SITE_PATH="/path/to/your-site/app"                 # your WP/Local site
+export OXY_SITE_PATH="/path/to/your-site/app"                 # your WordPress site
 ./scripts/wp-eval.sh scripts/examples/build_blog_archive.php  # run a build script
-./scripts/wp-eval.sh scripts/validate-tree.php <postId> fetch # ALWAYS validate after a write
-./scripts/wp-eval.sh -- post list                            # any wp-cli command
+./scripts/wp-eval.sh scripts/validate-tree.php <postId> fetch # check it before trusting it
+./scripts/wp-eval.sh -- post list                             # any wp-cli command
 ```
 
-Building a page is a few lines:
+A whole page is a few lines:
 
 ```php
 require '/path/to/oxygen-page-builder/scripts/lib.php';
+
 $id = wp_insert_post(['post_title' => 'Financing', 'post_type' => 'page', 'post_status' => 'publish']);
+
 oxy_write_tree($id, [
   oxy_div([
     oxy_text('FINANCING', 'h1', ['hero__title']),
@@ -59,49 +108,32 @@ oxy_write_tree($id, [
     oxy_button('CONTACT US', '/contact/', ['btn']),
   ], ['container']),
 ]);
-// then: validate-tree.php <id> fetch  →  open ?oxygen=builder&id=<id>
 ```
 
-> **The one rule that saves you:** the front-end renderer is forgiving, but the builder is strict. A page can look fine on the site yet refuse to open in the builder. Never hand-guess a shape — use the toolbox, `oxy_golden()`, or copy a shape the builder itself saved. (More in [`SKILL.md`](oxygen-page-builder/SKILL.md).)
-
----
-
-## What's inside
-
-Everything lives in [`oxygen-page-builder/`](oxygen-page-builder/):
-
-| File | What it gives you |
-|---|---|
-| **SKILL.md** | Start here. The golden rules, the toolbox, the build-and-verify workflow, and the "general → specific" approach to CSS & templates. |
-| **RECIPES.md** | Copy-paste recipes: pages, WooCommerce product & shop pages, cart/checkout/account, search, 404, blog, native loops, dynamic data, images, footer rebuilds. |
-| **GOTCHAS.md** | The trap list — symptom → cause → fix. This is where the hours-saved live. |
-| **PROPERTIES.md** | Exact write-shapes: the page tree, style selectors, Global Settings (colors/fonts/width), templates, per-element keys, responsive breakpoints. |
-| **ELEMENTS.md** | All 165 native elements and where to find each one's source. |
-| **SEO.md** | What WordPress/WooCommerce give you free, plus a drop-in SEO helper pattern (meta, Open Graph, JSON-LD). |
-| **scripts/** | `lib.php` (the toolbox), `validate-tree.php` (run after every write), `wp-eval.sh` (wp-cli wrapper), and `examples/` (six worked scripts). |
+> **The one rule worth remembering:** the website is forgiving, the builder is strict. A page can look perfect to visitors and still refuse to open for editing. So never invent a shape from memory — use the toolbox, copy one the builder itself saved, and run the validator before you call it done.
 
 ---
 
 ## Requirements
 
-- WordPress with **Oxygen 6.1** (Breakdance engine) active
+- WordPress running **Oxygen 6.1** or newer
 - **wp-cli** and **PHP 8.x**
-- Optional: [Local](https://localwp.com/) for local dev — `wp-eval.sh` handles its non-standard PHP/MySQL paths for you
+- Optional: [Local](https://localwp.com/) for local development — the toolbox already knows its quirks
 
 ---
 
 ## Good to know
 
-- **Distilled from a real production WooCommerce build.** Example post IDs (e.g. footer `#15`) and the placeholder brand (**"Acme"**, teal + slate, Oswald/Inter) are illustrative — your IDs and brand will differ. Treat them as patterns.
-- **Pinned to Oxygen 6.1.0.** Shapes can shift between plugin versions. When unsure, capture a fresh sample from your own builder (`\Breakdance\Data\get_tree($id)`) and compare.
-- **No warranty.** Always run `validate-tree.php` and open the page in the builder before trusting a write.
-- **Bring your own project notes.** This ships no `PROJECT-STATE.md` on purpose — keep one in *your* repo (template/component IDs, global setup, known debt); future-you will thank you.
+- **This came out of a real production store,** so the examples use made-up post IDs and a placeholder brand ("Acme", teal and slate, Oswald/Inter). Yours will differ — treat them as patterns, not settings to copy.
+- **It's pinned to Oxygen 6.1.** Later versions may shift things. If something looks off, build one example in your own builder and compare.
+- **Always verify before trusting a write.** Run the validator, then open the page in the builder. Both take seconds.
+- **Keep your own project notes.** This deliberately ships without them — a short file in *your* repo listing your template IDs and setup will save future-you a lot of digging.
 
 ---
 
 ## Contributing
 
-Corrections and new verified recipes or traps are very welcome — especially for Oxygen versions beyond 6.1.0. Please note the exact version you tested against.
+Corrections, new recipes and newly-discovered traps are very welcome — especially for Oxygen versions past 6.1. Please mention the exact version you tested against.
 
 ## Author
 
