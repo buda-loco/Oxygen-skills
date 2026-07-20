@@ -234,6 +234,13 @@ features — for each, use the golden-sample workflow (build once in the real bu
 6. **Wrapping-link = `oxy_link()`/`ContainerLink`, NEVER `WrapperLink`** — WrapperLink outputs
    `href="#"` (classes still apply, so it looks fine while every link is dead). §wrapper-link-href.
 7. **PhpCode `php_code` must start with `<?php`** or it prints as literal text. §phpcode-open-tag.
+8b. `wp eval-file` can SILENTLY no-op a whole build script (exit 0, no output, no write) — long
+   single lines are one trigger. Run big builds via a tiny `include`-runner file; if a build
+   "succeeds" without its echo output, suspect this first. §eval-file-silent-noop.
+8c. `OxygenElements\Image` renders the `<img>` ITSELF with your class — style/crop the class
+   directly, never `.cls img`. §native-image-is-img. Lazy imgs inside transformed carousel
+   tracks never load (§carousel-lazy-img); globbing a folder WP writes thumbnails into
+   cascades imports (§thumbnail-cascade).
 8. A code/`Component` node wraps its output in a block div → breaks a flex/grid PARENT (items go
    through one wrapper). `display:contents` on the code node, or emit the flex container inside it.
    §code-node-wrapper. Same shape: RichText wraps content, breaking `p+p`/direct-child CSS

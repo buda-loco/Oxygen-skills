@@ -874,3 +874,29 @@ Page node: `oxy_php('<?php if(function_exists("render_logos")) echo render_logos
 file-URL fallback so it renders before the repeater is populated. Blessed PhpCode-for-data pattern;
 one edit in wp-admin updates every placement. (For text-only clouds prefer native elements; a logo
 grid IS data-shaped, so PhpCode is correct here.)
+
+## Nav: auto-hide on scroll + accessible mobile overlay (PhpCode WP-menu nav)
+The dynamic PhpCode nav (WP menu → pill links) extends to a production nav pattern:
+- **Markup** (one PhpCode node renders both): desktop pill links wrapped in
+  `<div class="nav__links">` (`display:contents` so the pill's flex still applies) + a
+  `<button class="nav__burger" aria-expanded="false" aria-controls="mnav">` with 3 `<span>` bars,
+  plus a separate full-screen `<div class="mnav" id="mnav"><nav>big links</nav></div>`.
+- **CSS:** burger `display:none` on desktop; `@media(max-width:860px){.nav__links{display:none}
+  .nav__burger{display:flex}}`. Overlay: `position:fixed;inset:0;opacity:0;visibility:hidden;
+  pointer-events:none;transition:…` → `.is-open` flips all three (`visibility` keeps closed-menu
+  links out of the tab order). `html.menu-open{overflow:hidden}` locks scroll. Burger bars animate
+  to an X via `[aria-expanded="true"] span:nth-child(n){transform:…}`.
+- **JS:** toggle sets `aria-expanded` + `aria-label` (Abrir/Cerrar), focuses first link on open /
+  burger on close, closes on Escape and on link click.
+- **Auto-hide:** `.nav{transition:transform .3s}` `.nav--hidden{transform:translateY(-120%)}`;
+  scroll listener (passive) hides when `y>lastY+6 && y>140`, shows when `y<lastY-6`; skip while
+  the overlay is open. Feels premium, costs ~10 lines.
+
+## Art-directed responsive slider images (`<picture>` in a flex track)
+When mobile needs a DIFFERENT crop (not just a smaller file), wrap each slide:
+`<picture><source media="(max-width:640px)" srcset=".../mobile/slide.jpg"><img class="slide" …></picture>`.
+Two traps: (1) the `<picture>` becomes the flex child — move `flex:0 0 100%` from the img class
+to `.track picture{…}`; (2) the aspect-ratio changes per breakpoint
+(`.slide{aspect-ratio:16/9}` + `@media(max-width:640px){.slide{aspect-ratio:9/16}}`).
+Slider JS that counts `querySelectorAll('.slide')` keeps working (class stays on the img).
+Slides missing a mobile export just omit the `<source>` (desktop fallback).

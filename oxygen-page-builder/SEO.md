@@ -103,3 +103,20 @@ The counterpart to `element.matches()` for CSS — never assume, measure. Zero f
 - Real product images would populate `og:image` per-product and WC Product schema `image` (else it falls
   back to a brand default) — track this in your project notes.
 - If the blog grows, add `home`/blog-archive meta + consider a proper SEO plugin.
+
+## §contrast-audit — browser-computed WCAG check (run per page)
+Static CSS reading lies about contrast (cascade resets, inherited colors, layers). Audit RENDERED
+values in the console: walk `body *` text nodes, compute `getComputedStyle` color vs the first
+non-transparent ancestor `backgroundColor`, WCAG ratio threshold 4.5 (3 for ≥24px or ≥18.66px bold).
+Three false-positive guards learned in production:
+1. **Composite text alpha over the bg** before comparing (faint decorative watermarks at alpha<.35
+   are decorative — skip, don't "fix").
+2. **Skip media-backed elements** — text over videos/images/bg-images (an ancestor with a large
+   `<video>/<img>` child or background-image) can't be judged against background-color; verify
+   those visually (screenshot).
+3. `elementsFromPoint` only works in-viewport — don't trust it for off-screen sections.
+Real bugs this catches that greps miss: headings re-darkened by the `.oxy-text`/tag reset on
+colored bands (a LATENT bug that surfaces when a band's bg changes), accent-color links on brand
+backgrounds, "on-trend" solid teal/brand text on white. Fix pattern: accessible color TOKENS
+(`--tc-teal-text` for teal-as-text on light, `--tc-link-on-purple` for accents on brand bg) —
+never per-element patches.

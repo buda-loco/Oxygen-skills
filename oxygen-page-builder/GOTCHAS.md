@@ -831,3 +831,41 @@ leaves the inner box showing. Fix: keep the wrapper as the paint surface AND neu
 `.btn.bde-button{padding:0}` + `.btn.bde-button .bde-button__button{background:transparent;color:#fff;
 padding:.9em 2.1em;border-radius:4px;font:inherit}`. (The `<a href>` on the inner is what makes
 Button the a11y-correct CTA — see §accessible-link.)
+
+## §eval-file-silent-noop — `wp eval-file` can silently skip an entire script
+**Symptom:** `wp eval-file build.php` exits 0 with ZERO output — no echo, no error, no tree write.
+The same file runs perfectly via `include`. Observed triggers: single lines longer than ~2–4KB
+(giant inline SVG path data), and one 40KB build file that failed even after shortening lines.
+**Fix:** a tiny runner file that `include`s the real script — eval-file the runner:
+```php
+<?php // run_build.php
+error_reporting(E_ALL); ini_set('display_errors','stderr');
+register_shutdown_function(function(){ $e=error_get_last();
+  if ($e && in_array($e['type'],[E_ERROR,E_PARSE,E_COMPILE_ERROR,E_CORE_ERROR]))
+    fwrite(STDERR,"### FATAL: {$e['message']} @ {$e['file']}:{$e['line']}\n"); });
+include __DIR__ . '/build.php';
+```
+Also keep long string literals wrapped (SVG path data treats newlines as whitespace, and PHP
+single-quoted strings may contain literal newlines). If a build "succeeds" but the front-end
+doesn't change, suspect this FIRST — check the script's echo actually appeared.
+
+## §native-image-is-img — the Image element IS the `<img>`
+`OxygenElements\Image` renders the `<img>` tag itself carrying your `settings.advanced.classes`
+— there is NO wrapper div. So sizing/cropping (`aspect-ratio`, `object-fit:cover`) must go
+directly ON your class (`.breakdance .my-cell{display:block;aspect-ratio:1;object-fit:cover;}`),
+never on a `.my-cell img` descendant (matches nothing). The engine's
+`.breakdance img{max-width:100%;height:auto}` (0,1,1) may also need a scoped override.
+
+## §thumbnail-cascade — don't glob a folder WP writes thumbnails into
+Importing images to the media library (`wp_insert_attachment` + `wp_generate_attachment_metadata`)
+from an uploads subfolder you ALSO glob on every build is a runaway loop: WP writes resized
+copies (`img-300x167.webp`) INTO that folder, the next build imports the thumbnails as new
+"photos", which spawn more thumbnails (24 grid cells → 136 in three builds). Fixes (use both):
+1) filter the glob: `!preg_match('/-\d+x\d+\.[a-z]+$/i', basename($p))`;
+2) idempotency meta on each import (`update_post_meta($aid,'_my_source_file',$file)`) and reuse.
+
+## §carousel-lazy-img — lazy images in a transformed track never load
+`loading="lazy"` images inside a carousel track that is `transform: translateX(...)`-ed
+off-screen NEVER intersect the viewport, so they never load — slides/avatars render blank
+forever. Carousel/slider media must be eager: drop `loading="lazy"`, keep `decoding="async"`.
+(Also true for anything revealed by transform/opacity rather than scroll.)
