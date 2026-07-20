@@ -180,12 +180,19 @@ small, auditable, and idempotent.
 ## Where to look
 | Need | File |
 |---|---|
+| **Type & spacing — the DEFAULT system for text/headings/buttons/sections** (responsive modular scale + spacing-rhythm tokens; role→step map; a11y outline) | **TYPOGRAPHY.md** |
 | Element inventory (165) + source-file roots | ELEMENTS.md |
 | Exact write-shapes: tree/node, selector property groups, Global Settings, template settings, element content keys | PROPERTIES.md |
 | End-to-end recipes: pages, Gutenberg→components, WC PDP/PLP, **cart/checkout/my-account, search, 404, single-post, template-coverage checklist**, `.aux-box`, forms, menus, sliders, reference-CSS, images, footer rebuilds | RECIPES.md |
 | Symptom→fix table + every trap that burned us (io-ts, dead WC selectors, .bde-div cascade, comment-strip, FAQ vars, Gutenberg wipe guard…) | GOTCHAS.md |
 | Worked examples (page build, native loop, component placement, dynamic data, CSS injection) | scripts/examples/ |
 | SEO: what WP/WC give free, an `seo` mu-plugin pattern (meta desc/OG/schema/archive-canonical), Oxygen H1 + empty-post_content gotchas, audit recipe | SEO.md |
+| Media & motion: photo/video hero+scrim, hover-play video (GIF alt), scroll-scrubbed & autoplay-once Lottie, custom JS carousel, mix-blend duotone, 2-weight self-hosted fonts, ACF logo-cloud component | RECIPES.md §Media & motion |
+
+> **DEFAULT typography.** For ANY build, set up all text/headings/buttons/section-spacing with the
+> token system in **TYPOGRAPHY.md** (define `--fs-*`/`--sp-*`/`--tc-*` once in the global CssCode
+> node; every size/space/colour references a token; audit that 0 literal `font-size` remains on
+> text). It's rung 2 of the CSS ladder — do it before per-page styling.
 
 > **Per-project inventory:** keep a `PROJECT-STATE.md` in your own repo tracking what's built where
 > (template/component IDs, global setup, known debt). It's intentionally not shipped here — it's
@@ -204,12 +211,14 @@ features — for each, use the golden-sample workflow (build once in the real bu
 - **Variables** (Color/Number/Unit/FontFamily/ImageURL collections, per-element overrides) — this
   skill covers only the Global Settings palette. Official docs: *Design → Variables*.
 - **Native Interactions** (Click/Scroll-Into-View/Page-Load triggers → toggle class, show/hide) —
-  this skill hand-rolls scroll-reveal with an IntersectionObserver JS node; Interactions are the
+  this skill hand-rolls scroll-reveal (IntersectionObserver JS node) and **scroll-scrubbed /
+  autoplay-once Lottie + hover-play video** (RECIPES §Media & motion); Interactions are the
   builder-editable alternative. Official docs: *Design → Interactions*.
 - **ACF / Meta Box dynamic data** — MOSTLY CLOSED: content model (RECIPES §ACF Pro content
-  model) and the text binding shape (`acf_field_<FIELD_KEY>` + `text_dynamic_meta`,
-  PROPERTIES §Dynamic data binding) are verified. Still unshaped: image/gallery-field bindings
-  on Image elements, repeater loops, relationship queries — golden-sample when first needed.
+  model), the text binding shape (`acf_field_<FIELD_KEY>` + `text_dynamic_meta`,
+  PROPERTIES §Dynamic data binding), and now the **ACF options-page + image-repeater loop**
+  rendered via PhpCode (RECIPES §ACF logo-cloud component) are verified. Still unshaped: image/gallery
+  bindings on the native *Image* element, relationship queries — golden-sample when first needed.
 - **Form hooks** — `breakdance_form_validate_field` filter + the developer Form Actions API, beyond
   the FormBuilder shapes in RECIPES. Official docs: *Forms → Hooks & Actions API*.
 
@@ -229,3 +238,14 @@ features — for each, use the golden-sample workflow (build once in the real bu
    through one wrapper). `display:contents` on the code node, or emit the flex container inside it.
    §code-node-wrapper. Same shape: RichText wraps content, breaking `p+p`/direct-child CSS
    (§richtext-wrapper).
+9. **`global` fails in build HELPER functions too** (not just top scope) — a helper using
+   `global $base` under `wp eval-file` yields empty → relative img `src` → 404. Hardcode/param the
+   path. §global-in-helper.
+10. **Inline-SVG / SVG-`<img>` renders 0×0** — `.breakdance img{height:auto}` beats a class
+    `height`, and a `width/height:100%` SVG has no intrinsic size. Size it with a 2-class selector
+    or explicit width+height. §svg-height-auto.
+11. **A copied asset is 0 bytes** (Dropbox/iCloud online-only placeholder) — 200s but renders
+    blank. `stat -f%z` the source before copying; "Make Available Offline" first. §dropbox-zero-byte.
+12. **Heading text stays dark on a dark hero** — set `color` on the heading's OWN class, not the
+    section. §heading-color-reset. And **`oxy_button` shows a blue inner box** — neutralize
+    `.btn.bde-button .bde-button__button`. §button-inner-box.

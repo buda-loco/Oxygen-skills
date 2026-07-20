@@ -788,3 +788,46 @@ children from the golden SHELL with `defaultChildren => []`, and put your own Ri
 Same trap likely applies to other composites whose demo children use `EssentialElements\Image` —
 inserting them via the real builder ALSO plants the invalid node (this broke a live product
 template once).
+
+---
+
+## New traps (verified on the Boostribe build, 2026-07)
+
+### §svg-height-auto — an inline SVG (or `<img>` SVG) renders 0×0
+`.breakdance img{max-width:100%;height:auto}` (specificity 0,1,1) is in the reset. An SVG authored
+`<svg width="100%" height="100%" viewBox="0 0 W H">` has **no intrinsic pixel size**, so `height:auto`
+resolves to 0 → the element is 0×0 and invisible (looked "empty" even though the file 200s). A plain
+class like `.logo{height:64px}` (0,1,0) **loses** to `.breakdance img`. Fix: beat it with a
+2-class selector (`.wrap .logo{height:64px}`, 0,2,0) **or** set explicit `width` AND `height`, and
+`max-width:none`. Verify with `el.getBoundingClientRect()` — never trust the rule is "in the file".
+
+### §heading-color-reset — `<hN>` text stays dark on a dark section
+A real heading tag (`h1`–`h6`) inside a purple/photo hero renders in the theme/engine heading color
+(near-black) **even though the section sets `color:#fff`** — the heading doesn't inherit reliably.
+Fix: set `color` **on the heading's own class** (`.hero__word{color:#fff}` or a token), not just on
+the parent section. Same root cause as "body copy unreadable on dark sections", but bites headings
+specifically because they carry their own default color.
+
+### §global-in-helper — `global $x` is empty inside build *helper functions* too
+Trap #3 (`global` empty under `wp eval-file`) isn't limited to top scope. A build helper
+`function logo($f){ global $U; return … $U.$f …; }` invoked from an eval-file script gets an **empty
+`$U`** → relative `src="logos/x.png"` → 404 (renders broken while the file itself is fine). Section
+markup built in the *main* script scope worked; only the helper broke. Fix: **hardcode the base path
+inside the helper** (or pass it as a parameter). Never rely on `global`/closures-over-outer-vars
+under eval-file.
+
+### §dropbox-zero-byte — a copied asset is 0 bytes and renders broken (but 200s)
+Copying a file that is a Dropbox/iCloud **online-only placeholder** yields a **0-byte** file. It
+serves HTTP **200** (empty body), so `curl -o /dev/null -w %{http_code}` looks fine, but every
+`<img>`/logo/photo renders blank. Fix: `stat -f%z "$src"` the SOURCE *before* copying; if 0, have
+the user "Make Available Offline" (Finder) or open each file once, then re-copy. **A 200 is not
+proof the asset has bytes** — check size or `naturalWidth>0` in the browser.
+
+### §button-inner-box — `oxy_button` shows a colored box inside your styled button
+`oxy_button` renders `<div class="btn bde-button"><a class="bde-button__button" href>text</a></div>`
+— the **inner `.bde-button__button` is the real `<a href>`** and carries a default (often blue-ish)
+style that appears as a box inside your wrapper. Putting your `.btn` paint on the wrapper alone
+leaves the inner box showing. Fix: keep the wrapper as the paint surface AND neutralize the inner:
+`.btn.bde-button{padding:0}` + `.btn.bde-button .bde-button__button{background:transparent;color:#fff;
+padding:.9em 2.1em;border-radius:4px;font:inherit}`. (The `<a href>` on the inner is what makes
+Button the a11y-correct CTA — see §accessible-link.)

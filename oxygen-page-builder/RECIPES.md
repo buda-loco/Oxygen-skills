@@ -771,3 +771,106 @@ VERIFY against LIVE WP, not a cached copy: on a static-first / edge-cached host 
 force a fresh render (GOTCHAS §static-first-litespeed), then confirm `grep -c fonts.googleapis`
 is 0 and both the preload and `fonts.css` are present. Re-export afterwards so the static copy
 bundles the woff2 and contains zero Google calls.
+
+---
+
+## Media & motion recipes (verified on the Boostribe marketing build, 2026-07)
+
+These are the reusable patterns a modern marketing site needs that weren't covered above. All are
+hand-authored (native Div/Container wrappers + `oxy_html`/`oxy_js` leaves) so they stay in the tree
+and pass validation. Flip layout Divs → Containers first (the `.bde-div` reset).
+
+### Photo / video hero with scrim
+```
+.phero (position:relative; min-height:76vh; display:flex; center; overflow:hidden)
+  <video class="phero__vid" autoplay muted loop playsinline preload="auto"><source src=".mp4"></video>
+     — OR — <img class="phero__img" src=".jpg" alt="" aria-hidden="true">   (both: absolute inset:0; object-fit:cover; z:0)
+  .phero__scrim  (absolute inset:0; z:1; background:linear-gradient(rgba(20,12,26,.28),rgba(20,12,26,.55)))
+  .phero__inner  (position:relative; z:2)   ← wordmark h1 + subtitle + CTA
+```
+The wordmark is the `<h1>`; give it explicit `color:#fff` (see GOTCHAS §heading-color-reset).
+
+### Hover-play video (cinemagraph — the GIF alternative)
+Static poster until hover, then plays; pauses+rewinds on leave. Lighter and cleaner than a GIF
+(a GIF can't pause). Use MP4 (no alpha) on a matching solid cell bg; if you need transparency,
+src-swap a PNG↔GIF instead. Poster = the video's first frame (`ffmpeg -i x.mp4 -frames:v 1 poster.jpg`).
+```html
+<video class="team__vid" poster="poster.jpg" muted loop playsinline preload="none"
+       aria-label="Fran Pérez"
+       onmouseenter="this.play()" onmouseleave="this.pause();this.currentTime=0">
+  <source src="fran.mp4" type="video/mp4"></video>
+```
+CSS: square cell (`aspect-ratio:1/1`) so a 480×480 clip fills without cropping the face.
+
+### Scroll-scrubbed Lottie (scroll-driven animation — the Interactions gap, hand-rolled)
+Self-host `lottie-web` + the JSON in uploads. A tall pinned section drives frame = scroll progress.
+```
+.scroll (height:560vh; position:relative)   →   .sticky (position:sticky; top:0; height:100vh)   →   .mount
+```
+```js
+var a=lottie.loadAnimation({container:mount,renderer:'svg',loop:false,autoplay:false,path:JSON});
+function upd(){ var scrollable=wrap.offsetHeight-innerHeight, p=Math.min(1,Math.max(0,-wrap.getBoundingClientRect().top/scrollable));
+  a.goToAndStop(p*(a.totalFrames-1),true); }
+addEventListener('scroll',()=>requestAnimationFrame(upd),{passive:true});
+```
+Respect `prefers-reduced-motion` (skip the scrub; show the last frame). Self-contained JSON only —
+a `.lottie` with embedded data URIs needs no image sidecars; check `assets[].p` for `data:`.
+
+### Autoplay-once Lottie on load (animated logotype)
+`loop:false, autoplay:!reduce`; guard `mount.dataset.done`; reduced-motion → `autoplay:false` +
+`a.addEventListener('data_ready',()=>a.goToAndStop(a.totalFrames-1,true))`. Keep an **sr-only `<h1>`**
+next to the Lottie so the page still has a real heading for SEO/a11y.
+
+### Custom JS carousel (when Advancedslider golden-fails or is too heavy)
+```
+.stage  →  button.arrow(prev/next)  +  .viewport(overflow:hidden) → .track(display:flex; transition:transform .5s) → img.slide(flex:0 0 100%)  +  .dots
+```
+`go(i){ track.style.transform="translateX("+(-i*100)+"%)"; …toggle active dot… }` — a dozen lines of
+`oxy_js`. Slides can be pre-designed full-bleed images (one `<img>` each). Verify it starts at 0 on a
+fresh load (state can look off after in-page interaction).
+
+### mix-blend duotone (brand-tint any photo, no Photoshop)
+```css
+.duo{background:var(--c-purple); overflow:hidden}
+.duo img{mix-blend-mode:luminosity; opacity:.9}   /* luminosity of photo × solid brand color */
+```
+
+### Self-hosting a family that ships only 2 weights (e.g. Book + Black)
+Map ALL CSS weights onto the two files with weight-range `@font-face`:
+```css
+@font-face{font-family:'X';font-weight:400 500;src:url(X-Book.otf) format('opentype')}
+@font-face{font-family:'X';font-weight:600 900;src:url(X-Black.otf) format('opentype')}
+```
+Now `font-weight:700` → Black, body `450` → Book. Preload the two primary files in the head tracking
+code. Serve from `uploads/…` and reference by URL (not the media library).
+
+### Reusable, editable "logo cloud" component via ACF (closes the ACF image-repeater gap)
+Content-managed logo grid, rendered once, reused on many pages — the ACF **image + repeater loop**
+shape (previously an unshaped coverage gap), now verified:
+```php
+// mu-plugin
+add_action('acf/init', function(){
+  acf_add_options_page(['page_title'=>'Logos','menu_slug'=>'brand-logos','capability'=>'edit_posts']);
+  acf_add_local_field_group(['key'=>'group_logos','title'=>'Logos','fields'=>[[
+    'key'=>'field_logos','name'=>'company_logos','type'=>'repeater','layout'=>'block',
+    'sub_fields'=>[
+      ['key'=>'field_logo','name'=>'logo','type'=>'image','return_format'=>'array'],  // array → ['url'],['alt']
+      ['key'=>'field_faded','name'=>'faded','type'=>'true_false','ui'=>1],
+    ]]],
+    'location'=>[[['param'=>'options_page','operator'=>'==','value'=>'brand-logos']]]]);
+});
+function render_logos(){
+  $rows = function_exists('get_field') ? get_field('company_logos','option') : null;
+  if(!$rows){ /* bundled fallback: loop known files */ }
+  $o='<div class="logocloud__grid">';
+  foreach((array)$rows as $r){ $img=$r['logo']; $url=is_array($img)?$img['url']:wp_get_attachment_url($img);
+    $o.='<div class="logocloud__item'.(!empty($r['faded'])?' is-faded':'').'"><img src="'.esc_url($url).'" alt="'.esc_attr($img['alt']??'').'" loading="lazy"></div>'; }
+  return $o.'</div>';
+}
+```
+Page node: `oxy_php('<?php if(function_exists("render_logos")) echo render_logos(); ?>', ['logocloud'])`.
+**Seed** = for each file `wp_insert_attachment($att,$path)` + `wp_generate_attachment_metadata` +
+`update_field('company_logos', array_map(fn($id)=>['logo'=>$id], $ids), 'option')`. Keep a bundled
+file-URL fallback so it renders before the repeater is populated. Blessed PhpCode-for-data pattern;
+one edit in wp-admin updates every placement. (For text-only clouds prefer native elements; a logo
+grid IS data-shaped, so PhpCode is correct here.)
