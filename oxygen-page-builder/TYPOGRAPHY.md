@@ -124,3 +124,27 @@ scale. Existing BEM classes should set the SAME tokens (don't invent new sizes).
 - Verify: (1) grep compiled CSS — sizes resolve to `--fs-*`, no stray greys; (2) a11y outline —
   exactly one `h1`, sensible `h1→h2→h3` (FAQ questions correctly nest as `h3`); (3) eyeball the
   rhythm at 375px and 1440px — headings should feel punchy on desktop, calm on mobile.
+
+## Column-width tokens (the layout half of the system)
+
+Widths drift exactly like font sizes do — a production audit found centered content at
+520/560/620/760/820/900/940/1080/1100/1120/1400px plus asymmetric grids (`1fr 1.15fr`,
+`1fr 1.4fr`). Normalize to FOUR width tokens + one rule, defined next to the type tokens:
+
+```css
+--w-full:1180px;   /* standard content band (= --maxw) */
+--w-read:760px;    /* single-column reading width (~75ch) — leads, FAQs, quotes, hero subs */
+--w-wide:1340px;   /* wider two-column sections (split rows, logo clouds) */
+--w-xwide:1520px;  /* much-wider feature sections */
+```
+```css
+.container--wide{max-width:var(--w-wide);}   .container--xwide{max-width:var(--w-xwide);}
+.container--read{max-width:var(--w-read);}
+```
+
+Rules: (1) every centered inner block references a `--w-*` token — no literal max-widths on
+content; (2) **two-column layouts are ALWAYS `1fr 1fr`** — if one side needs more room, widen
+the section's container (`--w-wide/--w-xwide`), don't skew the ratio; (3) hero sub-texts sit at
+`--w-read` regardless of hero type, so photo-heroes and gradient-heroes read identically.
+Audit like the type scale: grep for `max-width:[0-9]` and `grid-template-columns:[^;]*fr` that
+aren't tokens / `1fr 1fr` / `repeat(...)`.

@@ -869,3 +869,34 @@ copies (`img-300x167.webp`) INTO that folder, the next build imports the thumbna
 off-screen NEVER intersect the viewport, so they never load — slides/avatars render blank
 forever. Carousel/slider media must be eager: drop `loading="lazy"`, keep `decoding="async"`.
 (Also true for anything revealed by transform/opacity rather than scroll.)
+
+## §plain-classes-invisible-in-builder — advanced.classes style fine but give the builder NOTHING
+**Symptom:** the page renders perfectly, the class audit passes ("every element has a class"),
+yet the builder's Structure tree shows anonymous `Container / Text / Rich Text` rows and clicking
+an element offers no class handle in the design panel. The client WILL call this out.
+**Cause:** `settings.advanced.classes` are plain strings for the reference-stylesheet strategy —
+they render into the DOM but are invisible to the builder UI. Only REGISTERED selectors attached
+via `meta.classes` (uuids) appear in the Structure tree / design panel.
+**Fix (retrofit that survives rebuilds)** — wrap your page-write in auto-register-and-promote;
+empty-shell selectors are fine (design keeps living in the reference stylesheet; the selector
+name still renders as the DOM class):
+```php
+function register_and_promote(array $tree): array {
+  $names = [];
+  $walk = function($n) use (&$walk,&$names){
+    foreach (($n['data']['properties']['settings']['advanced']['classes'] ?? []) as $c) $names[$c]=1;
+    foreach (($n['children'] ?? []) as $c2) $walk($c2);
+  };
+  foreach ($tree as $n) $walk($n);
+  $have = [];
+  foreach (oxy_read_selectors()['selectors'] as $s) $have[$s['name'] ?? ''] = 1;
+  $new = [];
+  foreach (array_keys($names) as $nm) if (empty($have[$nm])) $new[] = oxy_selector($nm, []);
+  if ($new) oxy_save_selectors($new);              // merge-by-name keeps stored uuids stable
+  return oxy_promote_classes_to_selectors($tree);  // plain strings -> meta.classes uuids
+}
+oxy_write_tree($id, register_and_promote(oxy_flip_divs_to_containers($tree, $n)));
+```
+Verify by decoding the stored tree (remember `_oxygen_data` = `{tree_json_string: "<json>"}` —
+decode TWICE) and counting nodes with `meta.classes` vs leftover `advanced.classes`: after
+promotion the leftovers should be 0 and every uuid must resolve in `oxy_read_selectors()`.
