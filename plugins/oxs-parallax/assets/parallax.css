@@ -19,8 +19,8 @@
       animation-timeline: view(); /* must come AFTER the shorthand (shorthand resets timeline) */
     }
     @keyframes oxs-plx {
-      from { translate: 0 var(--plx-from, 40px); }
-      to   { translate: 0 var(--plx-to, -40px); }
+      from { translate: 0 var(--plx-from, 40px); scale: var(--plx-scale-from, 1); }
+      to   { translate: 0 var(--plx-to, -40px);  scale: var(--plx-scale-to, 1); }
     }
   }
 }
@@ -29,3 +29,7 @@
 .oxs-plx--slow    { --plx-from: 24px;  --plx-to: -24px; }
 .oxs-plx--fast    { --plx-from: 80px;  --plx-to: -80px; }
 .oxs-plx--reverse { --plx-from: -40px; --plx-to: 40px; }
+.oxs-plx--fast.oxs-plx--reverse { --plx-from: -80px; --plx-to: 80px; }
+/* zoom: for full-bleed hero media (img/video) — no translate, scale 1.18→1 as you scroll.
+   The hosting hero section MUST use overflow:hidden;overflow:clip (see readme). */
+.oxs-plx--zoom { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1.18; --plx-scale-to: 1; }

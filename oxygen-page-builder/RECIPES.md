@@ -916,5 +916,12 @@ plugin, since Oxygen has no native equivalent:
   while in view), writing `el.style.translate` — symmetric semantics with the keyframes.
 - `prefers-reduced-motion` disables both. Ship a `test.html` exercising precedence/rotate/
   fallback/reduced-motion. MUST-READ trap: §overflow-hidden-kills-view-timeline.
+- **Scale channel** (v1.1): the same keyframes also animate the `scale` property from
+  `--plx-scale-from/--plx-scale-to` (unitless, default 1→1 = off). Preset `--zoom` (1.18→1,
+  no translate) gives full-bleed hero images/videos a Ken-Burns pull-back. Put the class ON
+  the media tag, NEVER its unpositioned wrapper (a transform there becomes the abs-positioned
+  child's containing block and collapses inset:0). Chain overflow:clip on the hero.
+- **Stagger reveals**: pair with native entrance animations — same type, incremental delay per
+  sibling (PROPERTIES §Entrance animations); reverse the index order for a backward wave.
 Build-script helpers: `bt_entrance($node,$type)` sets the native animation property;
 `bt_plx($node,$preset)`-style helper appends the `oxs-plx` marker classes — wrap any tree node.

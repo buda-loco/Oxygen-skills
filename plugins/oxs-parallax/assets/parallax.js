@@ -39,14 +39,16 @@
     var nodes = document.querySelectorAll('.oxs-plx');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
-      el.style.translate = ''; // measure the UNtranslated position
+      el.style.translate = ''; el.style.scale = ''; // measure the UNtransformed position
       var r = el.getBoundingClientRect();
       items.push({
         el: el,
         docTop: r.top + window.scrollY,
         h: r.height || 1,
         from: readVar(el, '--plx-from', 40),
-        to: readVar(el, '--plx-to', -40)
+        to: readVar(el, '--plx-to', -40),
+        sFrom: readVar(el, '--plx-scale-from', 1),
+        sTo: readVar(el, '--plx-scale-to', 1)
       });
       io.observe(el);
     }
@@ -78,6 +80,9 @@
       var p = (y + vh - it.docTop) / (vh + it.h); // 0 = entering bottom, 1 = leaving top
       if (p < 0) { p = 0; } else if (p > 1) { p = 1; }
       it.el.style.translate = '0 ' + (it.from + (it.to - it.from) * p).toFixed(1) + 'px';
+      if (it.sFrom !== 1 || it.sTo !== 1) {
+        it.el.style.scale = (it.sFrom + (it.sTo - it.sFrom) * p).toFixed(3);
+      }
     }
   }
 
@@ -95,6 +100,7 @@
     window.removeEventListener('resize', onResize);
     for (var i = 0; i < items.length; i++) {
       items[i].el.style.translate = '';
+      items[i].el.style.scale = '';
       items[i].el.style.willChange = '';
     }
     items = []; active = []; armed = false;

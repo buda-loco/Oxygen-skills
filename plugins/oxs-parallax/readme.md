@@ -18,7 +18,13 @@ Drop the folder into `wp-content/plugins/`, activate, done — no settings page 
    Set them via a preset class, inline `style="--plx-from:120px;--plx-to:-120px"`,
    your stylesheet, or **Oxygen Variables** (they compile to CSS custom properties).
 
-3. Presets: `oxs-plx--slow` (±24px) · `oxs-plx--fast` (±80px) · `oxs-plx--reverse` (down instead of up).
+3. Presets: `oxs-plx--slow` (±24px) · `oxs-plx--fast` (±80px) · `oxs-plx--reverse` (down instead
+   of up; combine `oxs-plx--fast oxs-plx--reverse` for a fast downward drift) ·
+   **`oxs-plx--zoom`** (scale 1.18→1, no translate — for full-bleed hero images/videos).
+
+   **Scale channel**: `--plx-scale-from` / `--plx-scale-to` (unitless) animate the `scale`
+   property alongside `translate` — both composited. Hero-media zoom is the intended use;
+   keep scale off small text (blurry rasterization mid-animation).
 
 ## Guarantees / constraints
 

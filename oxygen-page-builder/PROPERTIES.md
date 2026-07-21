@@ -232,6 +232,10 @@ $node['data']['properties']['settings']['animations']['entrance_animation'] =
 flipLeft | flipRight | zoomIn | zoomOut`. Renders `data-entrance="<type>"`; Oxygen auto-injects
 GSAP + ScrollTrigger + `entrance.js/css` + an inline `new BreakdanceEntrance(sel, cfg)` ONLY on
 pages that use it (dependency-conditional; scripts are INLINED — don't grep for `<script src>`).
-Optional controls exist (`duration`/`delay` unit-objects, `advanced{distance,offset,once,ease,
-disable_at}`) but their unit-object shapes are NOT yet golden-sampled — set those in the builder,
-don't guess (source: `oxygen/plugin/animations/entrance/{control,attributes,dependencies}.php`).
+**`delay` unit-shape VERIFIED** (io-ts VALID + runtime consumes it): 
+`'delay' => ['number'=>240,'unit'=>'ms','style'=>'240ms']` — `duration` and `advanced.distance/offset`
+use the same `{number,unit,style}` shape per the runtime's own defaults (entrance.js), but only
+`delay` is write-verified; `once`/`ease`/`disable_at` remain unsampled — set those in the builder
+(source: `oxygen/plugin/animations/entrance/{control,attributes,dependencies}.php`).
+**Stagger pattern**: nearby siblings (columns/cards/bubbles) get the same `animation_type` with
+incremental delays (e.g. 0/120/240ms); reverse the index for a backward wave. Verified at scale.
