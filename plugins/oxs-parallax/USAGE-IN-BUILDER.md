@@ -69,6 +69,19 @@ oxs-reveal  oxs-reveal--up
 In **scroll** mode the reveal is a playhead (scrubs in, reverses on scroll-up); in **one-off** it
 plays once and holds; in **off** the element is just visible.
 
+**Completion offset** — where in the viewport the reveal FINISHES as you scroll (scroll mode).
+A higher finish point = the animation plays out over more of the scroll and is easier to see.
+Add one of:
+
+| Class | Finishes | Feel |
+|---|---|---|
+| `oxs-reveal--top` | near the top of the viewport | longest, most visible |
+| `oxs-reveal--mid` | at centre — **the default** (no class needed) | balanced |
+| `oxs-reveal--bottom` | a bit below centre | shorter, still visible |
+
+Custom: set `--rv-at` yourself (e.g. `style="--rv-at:65%"`) for any finish point between ~20% and
+90% of the viewport. (Default is 50% = centre, so short elements still animate where you can see it.)
+
 **Stagger a group** (columns, cards, logos): add an increasing step class to each sibling —
 
 ```

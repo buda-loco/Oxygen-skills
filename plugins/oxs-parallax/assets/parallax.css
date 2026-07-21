@@ -87,18 +87,26 @@
 .oxs-reveal--fade  { --rv-x: 0px;   --rv-y: 0px; }
 .oxs-reveal--zoom  { --rv-s: .9; }
 
-/* stagger steps — used by BOTH modes: --rv-start delays the scroll-entry window (scroll mode),
+/* COMPLETION OFFSET — where in the viewport the reveal FINISHES as you scroll (scroll mode).
+   The reveal scrubs from the element entering (cover 0%) to this point, so a higher value =
+   the animation plays out over more of the scroll and is more visible. MIDDLE is the default
+   (no class needed). Custom: set --rv-at yourself (e.g. style="--rv-at:60%"). */
+.oxs-reveal--top    { --rv-at: 78%; }  /* finishes near the top — longest, most visible */
+.oxs-reveal--mid    { --rv-at: 50%; }  /* finishes at centre — the default */
+.oxs-reveal--bottom { --rv-at: 34%; }  /* finishes a bit below centre — shorter, still visible */
+
+/* stagger steps — used by BOTH modes: --rv-stag slides the scroll window later (scroll mode),
    --rv-delay delays the transition (one-off mode). Add .oxs-reveal--d1 … --d10 to siblings. */
-.oxs-reveal--d1  { --rv-start: 4%;  --rv-delay: .07s; }
-.oxs-reveal--d2  { --rv-start: 8%;  --rv-delay: .14s; }
-.oxs-reveal--d3  { --rv-start: 12%; --rv-delay: .21s; }
-.oxs-reveal--d4  { --rv-start: 16%; --rv-delay: .28s; }
-.oxs-reveal--d5  { --rv-start: 20%; --rv-delay: .35s; }
-.oxs-reveal--d6  { --rv-start: 24%; --rv-delay: .42s; }
-.oxs-reveal--d7  { --rv-start: 28%; --rv-delay: .49s; }
-.oxs-reveal--d8  { --rv-start: 32%; --rv-delay: .56s; }
-.oxs-reveal--d9  { --rv-start: 36%; --rv-delay: .63s; }
-.oxs-reveal--d10 { --rv-start: 40%; --rv-delay: .70s; }
+.oxs-reveal--d1  { --rv-stag: 3%;  --rv-delay: .07s; }
+.oxs-reveal--d2  { --rv-stag: 6%;  --rv-delay: .14s; }
+.oxs-reveal--d3  { --rv-stag: 9%;  --rv-delay: .21s; }
+.oxs-reveal--d4  { --rv-stag: 12%; --rv-delay: .28s; }
+.oxs-reveal--d5  { --rv-stag: 15%; --rv-delay: .35s; }
+.oxs-reveal--d6  { --rv-stag: 18%; --rv-delay: .42s; }
+.oxs-reveal--d7  { --rv-stag: 21%; --rv-delay: .49s; }
+.oxs-reveal--d8  { --rv-stag: 24%; --rv-delay: .56s; }
+.oxs-reveal--d9  { --rv-stag: 27%; --rv-delay: .63s; }
+.oxs-reveal--d10 { --rv-stag: 30%; --rv-delay: .70s; }
 
 @media (prefers-reduced-motion: no-preference) {
   @keyframes oxs-reveal {
@@ -113,8 +121,10 @@
     .oxs-reveal.oxs-reveal--scroll:not(.oxs-reveal--off) {
       animation: oxs-reveal linear both;
       animation-timeline: view();
-      animation-range: entry calc(var(--rv-start, 0%))
-                       entry calc(var(--rv-start, 0%) + var(--rv-span, 55%));
+      /* scrub from the element entering (cover 0%) to the completion offset (--rv-at, default
+         centre); --rv-stag slides the whole window later for staggered siblings/words. */
+      animation-range: cover calc(var(--rv-from, 0%) + var(--rv-stag, 0%))
+                       cover calc(var(--rv-at, 50%) + var(--rv-stag, 0%));
     }
   }
 
