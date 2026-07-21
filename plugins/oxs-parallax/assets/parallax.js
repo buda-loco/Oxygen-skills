@@ -76,7 +76,7 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (modeFor(el,'oxs-plx') !== 'scroll') { continue; } // one-off handled by engine #1
-      el.style.translate = ''; el.style.scale = '';
+      el.style.translate = ''; el.style.scale = ''; el.style.rotate = ''; // measure untransformed
       var r = el.getBoundingClientRect();
       items.push({
         el: el,
@@ -135,7 +135,7 @@
     window.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', onResize);
     for (var i = 0; i < items.length; i++) {
-      items[i].el.style.translate = ''; items[i].el.style.scale = ''; items[i].el.style.willChange = '';
+      items[i].el.style.translate = ''; items[i].el.style.scale = ''; items[i].el.style.rotate = ''; items[i].el.style.willChange = '';
     }
     items = []; active = []; armed = false;
   }
