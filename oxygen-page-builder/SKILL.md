@@ -211,7 +211,9 @@ features — for each, use the golden-sample workflow (build once in the real bu
 - **Variables** (Color/Number/Unit/FontFamily/ImageURL collections, per-element overrides) — this
   skill covers only the Global Settings palette. Official docs: *Design → Variables*.
 - **Native Interactions** (Click/Scroll-Into-View/Page-Load triggers → toggle class, show/hide) —
-  this skill hand-rolls scroll-reveal (IntersectionObserver JS node) and **scroll-scrubbed /
+  still unshaped, BUT **entrance animations ARE now shaped** (PROPERTIES §Entrance animations,
+  verified) — use those for scroll reveals instead of hand-rolled IntersectionObserver nodes.
+  This skill still hand-rolls **scroll-scrubbed /
   autoplay-once Lottie + hover-play video** (RECIPES §Media & motion); Interactions are the
   builder-editable alternative. Official docs: *Design → Interactions*.
 - **ACF / Meta Box dynamic data** — MOSTLY CLOSED: content model (RECIPES §ACF Pro content
