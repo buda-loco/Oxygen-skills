@@ -937,6 +937,15 @@ plugin, since Oxygen has no native equivalent:
   offset then holds (no rewind). Per element, `.oxs-plx--off/--scroll/--oneoff` beats the global
   default. `off` being default means dropping the plugin on a new site changes nothing until an
   admin flips it — the safe portable default. (`--grow` is scroll-only; `--zoom` works in both.)
+- **More motion channels** (v1.4–1.5): the single keyframe now animates `translate` X **and** Y,
+  `scale`, AND `rotate` — each from its own `--plx-*` var, so one element can drift + scale + spin
+  at once. Presets: `--x-right/--x-left` (horizontal drift), `--spin/--spin-r` (rotate ±18°, composes
+  with a `transform:rotate()` base), `--in-left/--in-right` (slide a side element out→in). The rAF
+  fallback lerps every channel. ⚠ ANY sideways/rotation motion must live inside an `overflow:clip`
+  host or it adds a horizontal scrollbar. Example use: a programmatic decorative grid (rings/dots)
+  placed in corners/edges that spins + drifts on scroll — cheaper and more controllable than a
+  heavy exported "animated pattern" SVG (Patternodes etc. emit tens-of-thousands of `<use>` copies →
+  multi-MB; a CSS/JS grid or a native SVG `<pattern>` is a few KB).
 - **Scale channel** (v1.1): the same keyframes also animate the `scale` property from
   `--plx-scale-from/--plx-scale-to` (unitless, default 1→1 = off). Preset `--zoom` (1.18→1,
   no translate) gives full-bleed hero images/videos a Ken-Burns pull-back. Put the class ON

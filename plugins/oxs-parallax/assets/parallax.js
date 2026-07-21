@@ -87,7 +87,9 @@
         xFrom: readVar(el, '--plx-x-from', 0),
         xTo: readVar(el, '--plx-x-to', 0),
         sFrom: readVar(el, '--plx-scale-from', 1),
-        sTo: readVar(el, '--plx-scale-to', 1)
+        sTo: readVar(el, '--plx-scale-to', 1),
+        rFrom: readVar(el, '--plx-rot-from', 0),
+        rTo: readVar(el, '--plx-rot-to', 0)
       });
       io.observe(el);
     }
@@ -117,6 +119,9 @@
                             + (it.from + (it.to - it.from) * p).toFixed(1) + 'px';
       if (it.sFrom !== 1 || it.sTo !== 1) {
         it.el.style.scale = (it.sFrom + (it.sTo - it.sFrom) * p).toFixed(3);
+      }
+      if (it.rFrom !== 0 || it.rTo !== 0) {
+        it.el.style.rotate = (it.rFrom + (it.rTo - it.rFrom) * p).toFixed(1) + 'deg';
       }
     }
   }

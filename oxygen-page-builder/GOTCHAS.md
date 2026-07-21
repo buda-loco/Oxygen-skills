@@ -908,7 +908,14 @@ bare test page, but on the real site the element just sits at a fixed offset and
 (standard on decorated sections to contain watermarks) CREATES a scroll container. The section
 never scrolls → timeline progress never changes.
 **Fix:** on every section hosting a scroll-animated element use the fallback chain
-`overflow:hidden;overflow:clip;` — `clip` clips identically but creates NO scroll container
+`overflow:hidden;overflow:clip;` — `clip` clips identically but creates NO scroll container.
+
+**Scope trap (learned at scale):** once reveals ALSO ride `view()` (entrances converted to CSS
+scroll-driven), this bites on **every section that hosts a revealed element**, not just the few that
+host parallax decoratives — a single unclipped `overflow:hidden` ancestor freezes the reveal at
+"fully shown". Do a **site-wide `overflow:hidden` → `overflow:hidden;overflow:clip` sweep** across all
+section CSS, not a per-section fix. Fail-safe stays intact: the hidden state is gated so off-mode /
+reduced-motion / a JS failure always leave content visible
 (old browsers keep `hidden` and typically use a JS fallback computing against the viewport,
 which is immune). Beware page-local CSS re-declaring the section's `overflow:hidden` AFTER the
 global fix — the page rule wins and re-freezes it.
