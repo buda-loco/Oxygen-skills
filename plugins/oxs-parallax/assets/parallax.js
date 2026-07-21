@@ -84,6 +84,8 @@
         h: r.height || 1,
         from: readVar(el, '--plx-from', 40),
         to: readVar(el, '--plx-to', -40),
+        xFrom: readVar(el, '--plx-x-from', 0),
+        xTo: readVar(el, '--plx-x-to', 0),
         sFrom: readVar(el, '--plx-scale-from', 1),
         sTo: readVar(el, '--plx-scale-to', 1)
       });
@@ -111,7 +113,8 @@
       var it = active[i];
       var p = (y + vh - it.docTop) / (vh + it.h);
       if (p < 0) { p = 0; } else if (p > 1) { p = 1; }
-      it.el.style.translate = '0 ' + (it.from + (it.to - it.from) * p).toFixed(1) + 'px';
+      it.el.style.translate = (it.xFrom + (it.xTo - it.xFrom) * p).toFixed(1) + 'px '
+                            + (it.from + (it.to - it.from) * p).toFixed(1) + 'px';
       if (it.sFrom !== 1 || it.sTo !== 1) {
         it.el.style.scale = (it.sFrom + (it.sTo - it.sFrom) * p).toFixed(3);
       }

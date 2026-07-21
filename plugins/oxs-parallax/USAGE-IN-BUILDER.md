@@ -36,6 +36,7 @@ oxs-plx  oxs-plx--slow
 | `oxs-plx--reverse` | drift downward instead of up (combine with `--fast`) |
 | `oxs-plx--zoom` | scale 1.18 → 1 — full-bleed hero **images/videos** |
 | `oxs-plx--grow` | scale 1 → 1.12 — portraits/cards that swell (scroll-mode only) |
+| `oxs-plx--x-right` / `--x-left` | drift **sideways** as you scroll (giant watermark words). ⚠ only inside an `overflow:clip` section |
 
 **Fine-tune** with CSS custom properties (element style field, a class, or an **Oxygen Variable**):
 

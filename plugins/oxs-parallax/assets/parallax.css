@@ -31,8 +31,8 @@
       animation-timeline: view(); /* must come AFTER the shorthand (shorthand resets timeline) */
     }
     @keyframes oxs-plx {
-      from { translate: 0 var(--plx-from, 40px); scale: var(--plx-scale-from, 1); }
-      to   { translate: 0 var(--plx-to, -40px);  scale: var(--plx-scale-to, 1); }
+      from { translate: var(--plx-x-from, 0px) var(--plx-from, 40px); scale: var(--plx-scale-from, 1); }
+      to   { translate: var(--plx-x-to, 0px)   var(--plx-to, -40px);  scale: var(--plx-scale-to, 1); }
     }
   }
 
@@ -64,6 +64,10 @@
 /* grow: scales UP as the element travels (1→1.12). SCROLL-MODE ONLY — in one-off it settles to
    rest (scale 1) and shows no growth, since "grow" is a scroll-transit effect by nature. */
 .oxs-plx--grow { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1; --plx-scale-to: 1.12; }
+/* HORIZONTAL drift (tied to vertical scroll). ⚠ ONLY inside an overflow:clip host — sideways
+   motion off-screen would otherwise add a horizontal scrollbar. Zeroes the vertical channel. */
+.oxs-plx--x-right { --plx-x-from: -120px; --plx-x-to: 120px;  --plx-from: 0px; --plx-to: 0px; }
+.oxs-plx--x-left  { --plx-x-from: 120px;  --plx-x-to: -120px; --plx-from: 0px; --plx-to: 0px; }
 
 
 /* ==========================================================================
