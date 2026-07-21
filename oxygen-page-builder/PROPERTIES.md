@@ -220,3 +220,18 @@ Each variable:
 - ⚠ Still to capture: how a SELECTOR/element design property REFERENCES a variable (the property-group
   value shape when a control is bound to a variable). Golden-sample an element with a spacing bound to a
   variable, then read its `design`/selector property group.
+
+## Entrance animations (native AOS) — VERIFIED write-shape (2026-07-21)
+Per-element, applies to ANY element; builder panel "Entrance Animation". Minimal payload
+(io-ts VALID, front-end verified animating):
+```php
+$node['data']['properties']['settings']['animations']['entrance_animation'] =
+    ['animation_type' => 'slideUp'];
+```
+`animation_type` ∈ `fade | slideUp | slideDown | slideLeft | slideRight | flipUp | flipDown |
+flipLeft | flipRight | zoomIn | zoomOut`. Renders `data-entrance="<type>"`; Oxygen auto-injects
+GSAP + ScrollTrigger + `entrance.js/css` + an inline `new BreakdanceEntrance(sel, cfg)` ONLY on
+pages that use it (dependency-conditional; scripts are INLINED — don't grep for `<script src>`).
+Optional controls exist (`duration`/`delay` unit-objects, `advanced{distance,offset,once,ease,
+disable_at}`) but their unit-object shapes are NOT yet golden-sampled — set those in the builder,
+don't guess (source: `oxygen/plugin/animations/entrance/{control,attributes,dependencies}.php`).

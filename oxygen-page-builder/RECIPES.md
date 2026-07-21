@@ -900,3 +900,18 @@ to `.track picture{…}`; (2) the aspect-ratio changes per breakpoint
 (`.slide{aspect-ratio:16/9}` + `@media(max-width:640px){.slide{aspect-ratio:9/16}}`).
 Slider JS that counts `querySelectorAll('.slide')` keeps working (class stays on the img).
 Slides missing a mobile export just omit the `<source>` (desktop fallback).
+
+## Portable parallax plugin + native entrance animations (the scroll-effects stack)
+Verified split (2026-07-21): reveals = NATIVE entrance animations (PROPERTIES §Entrance
+animations — builder-editable, deps auto-load per page); continuous parallax = a tiny portable
+plugin, since Oxygen has no native equivalent:
+- Marker class (`bt-plx`) + config via CSS custom properties (`--plx-from/--plx-to` LENGTHS)
+  — the same channel Oxygen Variables compile to, so builder-side tuning is free.
+- Primary engine: `@supports(animation-timeline:view())` keyframes animating the **`translate`
+  property** (never `transform` — coexists with existing `rotate()` on decoratives).
+- Fallback: `@supports`-gated rAF + IntersectionObserver (cached bounds, `will-change` only
+  while in view), writing `el.style.translate` — symmetric semantics with the keyframes.
+- `prefers-reduced-motion` disables both. Ship a `test.html` exercising precedence/rotate/
+  fallback/reduced-motion. MUST-READ trap: §overflow-hidden-kills-view-timeline.
+Build-script helpers: `bt_entrance($node,$type)` sets the native animation property;
+`bt_plx($node,$preset)` appends the marker classes — wrap any tree node.

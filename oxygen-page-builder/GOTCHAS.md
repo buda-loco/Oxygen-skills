@@ -900,3 +900,15 @@ oxy_write_tree($id, register_and_promote(oxy_flip_divs_to_containers($tree, $n))
 Verify by decoding the stored tree (remember `_oxygen_data` = `{tree_json_string: "<json>"}` —
 decode TWICE) and counting nodes with `meta.classes` vs leftover `advanced.classes`: after
 promotion the leftovers should be 0 and every uuid must resolve in `oxy_read_selectors()`.
+
+## §overflow-hidden-kills-view-timeline — scroll-driven animation frozen at one value
+**Symptom:** a CSS scroll-driven animation (`animation-timeline: view()`) works perfectly on a
+bare test page, but on the real site the element just sits at a fixed offset and never moves.
+**Cause:** `view()` tracks the element's **nearest scroll container** — and `overflow:hidden`
+(standard on decorated sections to contain watermarks) CREATES a scroll container. The section
+never scrolls → timeline progress never changes.
+**Fix:** on every section hosting a scroll-animated element use the fallback chain
+`overflow:hidden;overflow:clip;` — `clip` clips identically but creates NO scroll container
+(old browsers keep `hidden` and typically use a JS fallback computing against the viewport,
+which is immune). Beware page-local CSS re-declaring the section's `overflow:hidden` AFTER the
+global fix — the page rule wins and re-freezes it.
