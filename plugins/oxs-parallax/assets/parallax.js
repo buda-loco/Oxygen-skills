@@ -1,45 +1,82 @@
-/* oxs-parallax — FALLBACK engine only. On browsers with CSS scroll-driven
- * animations this file returns immediately (the CSS in parallax.css runs on
- * the compositor and this script does zero work).
+/* oxs-parallax runtime — two responsibilities:
  *
- *   collect(): translate reset → measure once → cache {docTop, h, from, to}
- *        │                (no getBoundingClientRect inside the frame loop)
- *        ▼
- *   IntersectionObserver ──▶ active set (+ will-change on enter, − on exit)
- *        ▼
- *   scroll/resize (passive) ──▶ ONE rAF ──▶ p = (scrollY+vh − docTop)/(vh+h)
- *                                           el.style.translate = lerp(from,to,p)
+ *   1. ONE-OFF mode (all browsers): an IntersectionObserver adds .oxs-plx--in the first time a
+ *      one-off element enters the viewport; the CSS transition does the reveal, then it holds.
+ *      Scrolling back never rewinds it (we unobserve after the first trigger).
  *
- * prefers-reduced-motion: engine tears down (and re-arms on change).
- * Dynamic content: window.oxsPlxRefresh() re-collects (deliberately NO
- * MutationObserver — decorative fx don't warrant one).
- * Test hook: window.OXS_PLX_FORCE_FALLBACK forces this engine (test.html only).
+ *   2. SCROLL-DRIVEN fallback (only where CSS scroll timelines are unsupported): the classic
+ *      IntersectionObserver + one-rAF engine writes el.style.translate/scale from cached bounds.
+ *      On browsers WITH animation-timeline: view(), the CSS handles scroll mode and this engine
+ *      stays idle.
+ *
+ *   mode resolution per element: .oxs-plx--oneoff / .oxs-plx--scroll win; otherwise the global
+ *   <html> class (oxs-plx-mode-oneoff → one-off, anything else → scroll).
+ *
+ *   prefers-reduced-motion: CSS neutralises both modes; the scroll engine also tears down.
+ *   Test hook: window.OXS_PLX_FORCE_FALLBACK forces the scroll fallback (test.html only).
+ *   Dynamic content: window.oxsPlxRefresh() re-scans both engines.
  */
 (function () {
   'use strict';
 
+  var root = document.documentElement;
   var native = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('animation-timeline: view()');
-  if (native && !window.OXS_PLX_FORCE_FALLBACK) { return; }
-
   var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
-  var items = [];   // all .oxs-plx: {el, docTop, h, from, to}
-  var active = [];  // subset currently intersecting
-  var raf = 0, io = null, resizeT = 0, armed = false;
+
+  function modeOf(el) {
+    if (el.classList.contains('oxs-plx--off'))    { return 'off'; }
+    if (el.classList.contains('oxs-plx--oneoff')) { return 'oneoff'; }
+    if (el.classList.contains('oxs-plx--scroll')) { return 'scroll'; }
+    if (root.classList.contains('oxs-plx-mode-scroll')) { return 'scroll'; }
+    if (root.classList.contains('oxs-plx-mode-oneoff')) { return 'oneoff'; }
+    return 'off'; // default when no mode is set on <html>
+  }
+
+  /* =========================================================================
+     1. ONE-OFF — reveal once on entry (every browser; CSS transition does it)
+     ========================================================================= */
+  var oneoffIO = null;
+  function collectOneOff() {
+    if (oneoffIO) { oneoffIO.disconnect(); oneoffIO = null; }
+    var els = [];
+    var nodes = document.querySelectorAll('.oxs-plx');
+    for (var i = 0; i < nodes.length; i++) { if (modeOf(nodes[i]) === 'oneoff') { els.push(nodes[i]); } }
+    if (!els.length) { return; }
+    if (!('IntersectionObserver' in window)) {
+      for (var j = 0; j < els.length; j++) { els[j].classList.add('oxs-plx--in'); }
+      return;
+    }
+    oneoffIO = new IntersectionObserver(function (entries) {
+      for (var k = 0; k < entries.length; k++) {
+        if (entries[k].isIntersecting) {
+          entries[k].target.classList.add('oxs-plx--in');
+          oneoffIO.unobserve(entries[k].target); // fire once — never rewinds
+        }
+      }
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.01 });
+    for (var m = 0; m < els.length; m++) { oneoffIO.observe(els[m]); }
+  }
+
+  /* =========================================================================
+     2. SCROLL-DRIVEN fallback — only when CSS scroll timelines are unsupported
+     ========================================================================= */
+  var items = [], active = [], raf = 0, io = null, resizeT = 0, armed = false;
+  var runFallback = !native || window.OXS_PLX_FORCE_FALLBACK;
 
   function readVar(el, name, fallback) {
     var v = parseFloat(getComputedStyle(el).getPropertyValue(name));
-    return isNaN(v) ? fallback : v; // px assumed (documented units rule)
+    return isNaN(v) ? fallback : v;
   }
 
-  function collect() {
+  function collectScroll() {
     if (io) { io.disconnect(); }
     io = new IntersectionObserver(onIntersect, { rootMargin: '80px 0px' });
-    items = [];
-    active = [];
+    items = []; active = [];
     var nodes = document.querySelectorAll('.oxs-plx');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
-      el.style.translate = ''; el.style.scale = ''; // measure the UNtransformed position
+      if (modeOf(el) !== 'scroll') { continue; } // one-off handled by engine #1
+      el.style.translate = ''; el.style.scale = '';
       var r = el.getBoundingClientRect();
       items.push({
         el: el,
@@ -61,13 +98,8 @@
       for (j = 0; j < items.length; j++) { if (items[j].el === e.target) { it = items[j]; break; } }
       if (!it) { continue; }
       var idx = active.indexOf(it);
-      if (e.isIntersecting && idx === -1) {
-        active.push(it);
-        it.el.style.willChange = 'translate';
-      } else if (!e.isIntersecting && idx !== -1) {
-        active.splice(idx, 1);
-        it.el.style.willChange = ''; // never leave layers promoted off-screen
-      }
+      if (e.isIntersecting && idx === -1) { active.push(it); it.el.style.willChange = 'translate'; }
+      else if (!e.isIntersecting && idx !== -1) { active.splice(idx, 1); it.el.style.willChange = ''; }
     }
     schedule();
   }
@@ -77,7 +109,7 @@
     var y = window.scrollY, vh = window.innerHeight;
     for (var i = 0; i < active.length; i++) {
       var it = active[i];
-      var p = (y + vh - it.docTop) / (vh + it.h); // 0 = entering bottom, 1 = leaving top
+      var p = (y + vh - it.docTop) / (vh + it.h);
       if (p < 0) { p = 0; } else if (p > 1) { p = 1; }
       it.el.style.translate = '0 ' + (it.from + (it.to - it.from) * p).toFixed(1) + 'px';
       if (it.sFrom !== 1 || it.sTo !== 1) {
@@ -87,40 +119,40 @@
   }
 
   function schedule() { if (!raf && active.length) { raf = requestAnimationFrame(tick); } }
+  function onResize() { clearTimeout(resizeT); resizeT = setTimeout(collectScroll, 180); }
 
-  function onResize() {
-    clearTimeout(resizeT);
-    resizeT = setTimeout(collect, 180);
-  }
-
-  function teardown() {
+  function teardownScroll() {
     if (io) { io.disconnect(); io = null; }
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     window.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', onResize);
     for (var i = 0; i < items.length; i++) {
-      items[i].el.style.translate = '';
-      items[i].el.style.scale = '';
-      items[i].el.style.willChange = '';
+      items[i].el.style.translate = ''; items[i].el.style.scale = ''; items[i].el.style.willChange = '';
     }
     items = []; active = []; armed = false;
   }
 
-  function arm() {
+  function armScroll() {
     if (armed) { return; }
     armed = true;
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', onResize, { passive: true });
-    collect();
+    collectScroll();
   }
 
+  /* ============================ orchestration ============================ */
   function init() {
-    if (mq && mq.matches) { teardown(); return; } // reduced motion → static
-    arm();
+    collectOneOff(); // one-off works regardless of reduced-motion (CSS gates the visuals)
+    if (!runFallback) { return; }
+    if (mq && mq.matches) { teardownScroll(); return; }
+    armScroll();
   }
 
   if (mq && mq.addEventListener) { mq.addEventListener('change', init); }
-  window.oxsPlxRefresh = function () { if (armed) { collect(); } else { init(); } };
+  window.oxsPlxRefresh = function () {
+    collectOneOff();
+    if (runFallback) { if (armed) { collectScroll(); } else { init(); } }
+  };
 
   if (document.readyState !== 'loading') { init(); }
   else { document.addEventListener('DOMContentLoaded', init); }

@@ -1,12 +1,32 @@
 # oxs-parallax
 
 Portable scroll-linked parallax for WordPress (built for Oxygen 6 sites, works with any markup).
-Drop the folder into `wp-content/plugins/`, activate, done — no settings page by design.
+Drop the folder into `wp-content/plugins/`, activate, done.
+
+## Modes (Settings → Parallax)
+
+One site-wide default, switchable in the admin, plus a per-element override:
+
+| Mode | Behavior |
+|---|---|
+| **off** *(default on fresh installs)* | Parallax disabled everywhere; elements stay static. |
+| **scroll-driven** | Transform is scrubbed to scroll position and **reverses** when you scroll back up. |
+| **one-off** | Each element reveals in **once** when it enters the viewport, then **holds** (no rewind). |
+
+**Per-element override** — wins over the global default: add `oxs-plx--off`, `oxs-plx--scroll`,
+or `oxs-plx--oneoff` alongside `oxs-plx`. (E.g. keep the site *off* but opt one hero into scroll.)
+
+The global default is emitted as a class on `<html>` (`oxs-plx-mode-off|scroll|oneoff`) from an
+early `<head>` script, so it's set before first paint. `off` is the shipping default so the plugin
+never animates anything until an admin (or a class) opts in.
+
+Note: `oxs-plx--grow` (scale-up) is a scroll-transit effect — in one-off mode it settles to rest
+(scale 1) and shows no growth. `oxs-plx--zoom` works in both (one-off = a zoom-in that settles).
 
 ## Usage
 
 1. Add the class **`oxs-plx`** to any element (Oxygen: class field, or `settings.advanced.classes`
-   in programmatic builds).
+   in programmatic builds), and pick a mode in Settings → Parallax (or an override class).
 2. Tune with CSS custom properties — **lengths with units** (unitless values silently disable
    the CSS engine):
 
@@ -31,9 +51,10 @@ Drop the folder into `wp-content/plugins/`, activate, done — no settings page 
 
 - Animates the **`translate` property** — your existing `transform: rotate()/scale()` is untouched.
 - **Vertical-only** by design (can never cause horizontal scrollbars).
-- **`prefers-reduced-motion: reduce` disables everything** in both engines.
-- Modern browsers: pure CSS scroll-driven animation (compositor, the JS does zero work).
-  Older browsers: IntersectionObserver-gated rAF fallback writing `el.style.translate`.
+- **`prefers-reduced-motion: reduce` disables everything** in every mode.
+- **scroll** mode: pure CSS scroll-driven animation on modern browsers (compositor, JS does zero
+  work); IntersectionObserver-gated rAF fallback elsewhere. **one-off** mode: an IntersectionObserver
+  adds `.oxs-plx--in` once and a CSS transition does the reveal (all browsers). **off**: nothing runs.
 - Intended for **decorative elements** (watermarks, dot grids, framed photos) — not large hero
   images (paint cost) and not elements inside transformed carousel tracks.
 - Sections whose decoratives overhang should keep `overflow: hidden` (the movement extends

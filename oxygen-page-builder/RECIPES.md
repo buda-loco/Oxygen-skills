@@ -916,6 +916,14 @@ plugin, since Oxygen has no native equivalent:
   while in view), writing `el.style.translate` — symmetric semantics with the keyframes.
 - `prefers-reduced-motion` disables both. Ship a `test.html` exercising precedence/rotate/
   fallback/reduced-motion. MUST-READ trap: §overflow-hidden-kills-view-timeline.
+- **Modes** (v1.2, global option + per-element override): the plugin ships a Settings → Parallax
+  radio writing a `<html>` class (`oxs-plx-mode-off|scroll|oneoff`, emitted in an early `<head>`
+  script before paint). **off** = default on fresh installs (nothing animates until opted in);
+  **scroll** = scrubbed-to-scroll, reverses on scroll-up (CSS `view()` timeline / rAF fallback);
+  **one-off** = IntersectionObserver adds `.oxs-plx--in` once → CSS transition reveals from the
+  offset then holds (no rewind). Per element, `.oxs-plx--off/--scroll/--oneoff` beats the global
+  default. `off` being default means dropping the plugin on a new site changes nothing until an
+  admin flips it — the safe portable default. (`--grow` is scroll-only; `--zoom` works in both.)
 - **Scale channel** (v1.1): the same keyframes also animate the `scale` property from
   `--plx-scale-from/--plx-scale-to` (unitless, default 1→1 = off). Preset `--zoom` (1.18→1,
   no translate) gives full-bleed hero images/videos a Ken-Burns pull-back. Put the class ON

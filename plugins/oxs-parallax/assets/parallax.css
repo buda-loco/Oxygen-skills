@@ -1,20 +1,32 @@
-/* oxs-parallax — primary engine: CSS scroll-driven animation (compositor, zero JS).
+/* oxs-parallax — two globally-switchable modes (+ per-element override):
  *
- * Marker:  .oxs-plx on any element.
- * Config:  --plx-from / --plx-to  (LENGTHS — units required; unitless values
- *          silently disable the effect). Set inline, on a class, or via Oxygen
- *          Variables (which compile to CSS custom properties).
- * Motion:  animates the `translate` PROPERTY (not `transform`) so existing
- *          transform: rotate()/scale() on decoratives is never clobbered.
- * Range:   view() = the element animates across its whole viewport pass
- *          (enters at from-value, exits at to-value).
- * Safety:  vertical-only by design (no horizontal-scrollbar class of bugs);
- *          intended for DECORATIVE elements (watermarks, dot grids, polaroids),
- *          not hero images — large painted areas cost more per frame.
+ *   scroll-driven  [default] : transform is scrubbed to the element's scroll position and
+ *                              REVERSES when you scroll back up (CSS scroll-driven animation,
+ *                              runs on the compositor, zero JS on supporting browsers).
+ *   one-off                  : the element reveals IN from its offset once, the first time it
+ *                              enters the viewport, then HOLDS at rest — scrolling back does NOT
+ *                              rewind it (CSS transition; JS adds .oxs-plx--in on entry).
+ *
+ * Global default is set by the plugin from Settings → Parallax, as a class on <html>
+ * (oxs-plx-mode-scroll | oxs-plx-mode-oneoff). Scroll is the true default even if that class is
+ * absent. Override per element with .oxs-plx--scroll / .oxs-plx--oneoff.
+ *
+ * Config:  --plx-from / --plx-to (translate Y, LENGTHS — units required),
+ *          --plx-scale-from / --plx-scale-to (scale, unitless). Inline, on a class, or via
+ *          Oxygen Variables (they compile to the same custom properties).
+ * Motion:  animates the `translate` / `scale` PROPERTIES (not `transform`), so existing
+ *          transform: rotate() on decoratives is never clobbered.
  */
 @media (prefers-reduced-motion: no-preference) {
+
+  /* Three modes, resolved by <html> class + per-element override; OFF is the default (a plain
+     .oxs-plx with no matching mode simply stays static). .oxs-plx--off force-disables an element
+     in any mode. Modes only engage under an explicit html.oxs-plx-mode-scroll / -oneoff. */
+
+  /* ---------- SCROLL-DRIVEN (scrubbed, reversible) ---------- */
   @supports (animation-timeline: view()) {
-    .oxs-plx {
+    html.oxs-plx-mode-scroll .oxs-plx:not(.oxs-plx--oneoff):not(.oxs-plx--off),
+    .oxs-plx.oxs-plx--scroll:not(.oxs-plx--off) {
       animation: oxs-plx linear both;
       animation-timeline: view(); /* must come AFTER the shorthand (shorthand resets timeline) */
     }
@@ -23,6 +35,22 @@
       to   { translate: 0 var(--plx-to, -40px);  scale: var(--plx-scale-to, 1); }
     }
   }
+
+  /* ---------- ONE-OFF (reveal from offset → rest, then hold; no rewind) ----------
+     Element sits at its "from" offset; JS adds .oxs-plx--in when it first enters view,
+     transitioning it to rest. Nothing reverses it afterwards. */
+  html.oxs-plx-mode-oneoff .oxs-plx:not(.oxs-plx--scroll):not(.oxs-plx--off),
+  .oxs-plx.oxs-plx--oneoff:not(.oxs-plx--off) {
+    translate: 0 var(--plx-from, 40px);
+    scale: var(--plx-scale-from, 1);
+    transition: translate var(--plx-in-dur, .9s) var(--plx-in-ease, cubic-bezier(.2, .7, .2, 1)),
+                scale     var(--plx-in-dur, .9s) var(--plx-in-ease, cubic-bezier(.2, .7, .2, 1));
+  }
+  html.oxs-plx-mode-oneoff .oxs-plx.oxs-plx--in:not(.oxs-plx--scroll):not(.oxs-plx--off),
+  .oxs-plx.oxs-plx--oneoff.oxs-plx--in:not(.oxs-plx--off) {
+    translate: 0 0;
+    scale: 1;
+  }
 }
 
 /* Presets — pure var-setting classes; combine as .oxs-plx.oxs-plx--slow */
@@ -30,8 +58,9 @@
 .oxs-plx--fast    { --plx-from: 80px;  --plx-to: -80px; }
 .oxs-plx--reverse { --plx-from: -40px; --plx-to: 40px; }
 .oxs-plx--fast.oxs-plx--reverse { --plx-from: -80px; --plx-to: 80px; }
-/* zoom: for full-bleed hero media (img/video) — no translate, scale 1.18→1 as you scroll.
-   The hosting hero section MUST use overflow:hidden;overflow:clip (see readme). */
+/* zoom: full-bleed hero media (img/video) — scale 1.18→1. Works in BOTH modes (one-off = a
+   zoom-in reveal that settles at 1). The hosting hero MUST use overflow:hidden;overflow:clip. */
 .oxs-plx--zoom { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1.18; --plx-scale-to: 1; }
-/* grow: scales UP as the element travels (portraits, cards) — host needs overflow:clip */
+/* grow: scales UP as the element travels (1→1.12). SCROLL-MODE ONLY — in one-off it settles to
+   rest (scale 1) and shows no growth, since "grow" is a scroll-transit effect by nature. */
 .oxs-plx--grow { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1; --plx-scale-to: 1.12; }
