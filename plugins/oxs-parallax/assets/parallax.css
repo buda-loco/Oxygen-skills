@@ -33,3 +33,5 @@
 /* zoom: for full-bleed hero media (img/video) — no translate, scale 1.18→1 as you scroll.
    The hosting hero section MUST use overflow:hidden;overflow:clip (see readme). */
 .oxs-plx--zoom { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1.18; --plx-scale-to: 1; }
+/* grow: scales UP as the element travels (portraits, cards) — host needs overflow:clip */
+.oxs-plx--grow { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1; --plx-scale-to: 1.12; }
