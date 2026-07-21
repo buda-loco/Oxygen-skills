@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>oxs-parallax — test page</title>
+<!-- TEST PROTOCOL (covers review paths P1–P3)
+  1. Open normally (Chrome/Edge/Safari 26+): banner shows "CSS engine".
+     Scroll: every box moves; TRAVEL DIRECTIONS: default/preset boxes drift UP
+     as you scroll down; the reverse box drifts DOWN; the rotated box stays
+     rotated while moving (translate does not clobber transform).      [P1]
+  2. Var precedence: the "inline override" box travels ±120px (inline style
+     beats its preset class).                                          [P1]
+  3. Open with ?fallback=1: banner shows "JS fallback (forced)". Repeat 1–2 —
+     identical behavior. Click "inject element" → new box parallaxes after
+     oxsPlxRefresh().                                                   [P2]
+  4. DevTools → Rendering → Emulate prefers-reduced-motion: reduce →
+     reload: nothing moves in either mode.                             [P3]
+  5. Resize the window in fallback mode → boxes still track correctly
+     (bounds recollected).                                             [P2]
+-->
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;background:#f6f4f8;color:#222;}
+  header{position:fixed;top:0;left:0;right:0;background:#652C8B;color:#fff;padding:10px 16px;z-index:10;font-size:14px;}
+  main{max-width:720px;margin:0 auto;padding:45vh 20px;}
+  section{margin:60vh 0;}
+  .box{width:180px;height:180px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+       text-align:center;font-size:13px;font-weight:600;color:#fff;padding:10px;box-sizing:border-box;}
+  .a{background:#652C8B}.b{background:#D11EBA}.c{background:#43C9B1}.d{background:#8F3682}.e{background:#B317A0}.f{background:#0C7D66}
+  .rotated{transform:rotate(12deg);}
+  .row{display:flex;gap:24px;align-items:center;}
+  /* force-fallback mode must neutralize the CSS engine so the two don't fight
+     (an animation would override the JS-written translate) */
+  .force-fb .oxs-plx{animation:none !important;}
+  button{font-size:15px;padding:10px 16px;border-radius:6px;border:0;background:#652C8B;color:#fff;cursor:pointer;}
+</style>
+<link rel="stylesheet" href="assets/parallax.css">
+<script>
+  if (location.search.indexOf('fallback=1') !== -1) { window.OXS_PLX_FORCE_FALLBACK = true; }
+</script>
+</head>
+<body>
+<header id="banner">engine: …</header>
+<main>
+  <h1>oxs-parallax test page</h1>
+  <p>Scroll. Read the protocol in the page source comment.</p>
+
+  <section><div class="box a oxs-plx">default<br>(±40px, up)</div></section>
+  <section><div class="box b oxs-plx oxs-plx--slow">preset slow<br>(±24px)</div></section>
+  <section><div class="box c oxs-plx oxs-plx--fast">preset fast<br>(±80px)</div></section>
+  <section><div class="box d oxs-plx oxs-plx--reverse">preset reverse<br>(moves DOWN)</div></section>
+  <section><div class="box e oxs-plx oxs-plx--slow" style="--plx-from:120px;--plx-to:-120px;">inline override<br>(±120px beats preset)</div></section>
+  <section class="row">
+    <div class="box f oxs-plx rotated">rotated + parallax<br>(stays at 12°)</div>
+  </section>
+  <section id="inject-here">
+    <button onclick="inject()">inject element (tests oxsPlxRefresh)</button>
+  </section>
+  <section><p>end.</p></section>
+</main>
+<script src="assets/parallax.js" defer></script>
+<script>
+  addEventListener('DOMContentLoaded', function(){
+    var native = CSS.supports && CSS.supports('animation-timeline: view()');
+    var forced = !!window.OXS_PLX_FORCE_FALLBACK;
+    if (forced) document.body.classList.add('force-fb');
+    document.getElementById('banner').textContent = 'engine: ' +
+      (forced ? 'JS fallback (forced)' : (native ? 'CSS engine (scroll-driven)' : 'JS fallback (no native support)')) +
+      ' — reduced-motion: ' + (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'ON (nothing should move)' : 'off');
+  });
+  function inject(){
+    var d = document.createElement('div');
+    d.className = 'box b oxs-plx oxs-plx--fast';
+    d.textContent = 'injected';
+    document.getElementById('inject-here').appendChild(d);
+    if (window.oxsPlxRefresh) window.oxsPlxRefresh();
+  }
+</script>
+</body>
+</html>

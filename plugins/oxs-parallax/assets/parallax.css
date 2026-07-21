@@ -1,0 +1,31 @@
+/* oxs-parallax — primary engine: CSS scroll-driven animation (compositor, zero JS).
+ *
+ * Marker:  .oxs-plx on any element.
+ * Config:  --plx-from / --plx-to  (LENGTHS — units required; unitless values
+ *          silently disable the effect). Set inline, on a class, or via Oxygen
+ *          Variables (which compile to CSS custom properties).
+ * Motion:  animates the `translate` PROPERTY (not `transform`) so existing
+ *          transform: rotate()/scale() on decoratives is never clobbered.
+ * Range:   view() = the element animates across its whole viewport pass
+ *          (enters at from-value, exits at to-value).
+ * Safety:  vertical-only by design (no horizontal-scrollbar class of bugs);
+ *          intended for DECORATIVE elements (watermarks, dot grids, polaroids),
+ *          not hero images — large painted areas cost more per frame.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .oxs-plx {
+      animation: oxs-plx linear both;
+      animation-timeline: view(); /* must come AFTER the shorthand (shorthand resets timeline) */
+    }
+    @keyframes oxs-plx {
+      from { translate: 0 var(--plx-from, 40px); }
+      to   { translate: 0 var(--plx-to, -40px); }
+    }
+  }
+}
+
+/* Presets — pure var-setting classes; combine as .oxs-plx.oxs-plx--slow */
+.oxs-plx--slow    { --plx-from: 24px;  --plx-to: -24px; }
+.oxs-plx--fast    { --plx-from: 80px;  --plx-to: -80px; }
+.oxs-plx--reverse { --plx-from: -40px; --plx-to: 40px; }

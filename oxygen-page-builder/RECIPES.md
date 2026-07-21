@@ -902,10 +902,13 @@ Slider JS that counts `querySelectorAll('.slide')` keeps working (class stays on
 Slides missing a mobile export just omit the `<source>` (desktop fallback).
 
 ## Portable parallax plugin + native entrance animations (the scroll-effects stack)
+**The plugin SHIPS in this repo: `plugins/oxs-parallax/`** — copy to `wp-content/plugins/`, activate,
+add the class `oxs-plx` to any element. Full instructions in its `readme.md`; executable test
+protocol in its `test.html`.
 Verified split (2026-07-21): reveals = NATIVE entrance animations (PROPERTIES §Entrance
 animations — builder-editable, deps auto-load per page); continuous parallax = a tiny portable
 plugin, since Oxygen has no native equivalent:
-- Marker class (`bt-plx`) + config via CSS custom properties (`--plx-from/--plx-to` LENGTHS)
+- Marker class (`oxs-plx`) + config via CSS custom properties (`--plx-from/--plx-to` LENGTHS)
   — the same channel Oxygen Variables compile to, so builder-side tuning is free.
 - Primary engine: `@supports(animation-timeline:view())` keyframes animating the **`translate`
   property** (never `transform` — coexists with existing `rotate()` on decoratives).
@@ -914,4 +917,4 @@ plugin, since Oxygen has no native equivalent:
 - `prefers-reduced-motion` disables both. Ship a `test.html` exercising precedence/rotate/
   fallback/reduced-motion. MUST-READ trap: §overflow-hidden-kills-view-timeline.
 Build-script helpers: `bt_entrance($node,$type)` sets the native animation property;
-`bt_plx($node,$preset)` appends the marker classes — wrap any tree node.
+`bt_plx($node,$preset)`-style helper appends the `oxs-plx` marker classes — wrap any tree node.
