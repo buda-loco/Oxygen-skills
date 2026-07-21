@@ -931,5 +931,21 @@ plugin, since Oxygen has no native equivalent:
   gsap.from means no CSS ever hides them); retry init at window `load` (the inlined deps execute
   late); respect reduced-motion; and if the wrapper node had its own entrance animation, REMOVE
   it (double-animation).
+- **Reusable Global Block "Component" (draggable, editable) + word-by-word write-on quote**:
+  A Global Block is just a post of type `oxygen_block` whose `_oxygen_data` holds a normal tree
+  (same `{tree_json_string}` double-encoding as pages — verified). Create it with `wp_insert_post
+  (['post_type'=>'oxygen_block','post_status'=>'publish'])` then `oxy_write_tree($id, ...)`; register
+  + promote its classes like any page. It appears in the builder's **Components** panel, is draggable
+  onto any page, and every element stays individually editable (`validate-tree.php <id>` → VALID).
+  This is the robust "reusable component" path. ⚠ Do NOT hand-author Component *Properties*
+  (per-instance text overrides via `ComponentData{componentId,targets,properties}`): the front-end
+  override hook (`Breakdance\Components\setCurrentComponent`) is defined but never invoked in the
+  render pipeline, so there's nothing to golden-sample and no builder to generate a reference —
+  blind authoring hits the io-ts/builder-visibility trap. For distinct-text instances, duplicate the
+  block. **Write-on animation** (portable, class-driven, in global JS): split a `.bt-writeon`
+  element's text into `.bt-writeon__w` word spans, then a `gsap.timeline({scrollTrigger})` reveals
+  words (stagger) → an optional sibling `.bt-writeon__line` (scaleX draw) → optional `.bt-writeon__by`
+  author (fade-up). `gsap.from`/`timeline.from` = fail-safe (no gsap → text just shows). Any element
+  with these classes animates — build a quote in the builder with them, no code needed.
 Build-script helpers: `bt_entrance($node,$type)` sets the native animation property;
 `bt_plx($node,$preset)`-style helper appends the `oxs-plx` marker classes — wrap any tree node.

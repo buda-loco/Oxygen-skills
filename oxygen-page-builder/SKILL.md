@@ -205,9 +205,13 @@ features — for each, use the golden-sample workflow (build once in the real bu
 - **Element display conditions & template condition arrays** (AND/OR rules; custom PHP conditions) —
   official docs: *Dynamic Data → Conditions*, *Templating → Conditions / Applying Templates*. This
   skill only uses template `type` + `priority`.
-- **Component Properties** — parameterized component instances (per-placement text/image/visibility
-  overrides). Without them, a placed component repeats identically everywhere (documented behavior
-  here); with them, one block serves many contexts. Official docs: *Design → Components*.
+- **Components / Global Blocks** — PARTIALLY SHAPED (2026-07-21): a reusable Component IS an
+  `oxygen_block` post with a normal `_oxygen_data` tree — create with `wp_insert_post` + `oxy_write_tree`,
+  it shows in the builder Components panel, drags onto pages, stays fully editable (RECIPES §Reusable
+  Global Block). Still UNSHAPED + risky: **Component Properties** (per-instance overrides via
+  `ComponentData{componentId,targets,properties}`) — the FE override hook `setCurrentComponent` is
+  defined but never called in render, so no golden sample exists; duplicate the block for distinct text
+  instead. Official docs: *Design → Components*.
 - **Variables** (Color/Number/Unit/FontFamily/ImageURL collections, per-element overrides) — this
   skill covers only the Global Settings palette. Official docs: *Design → Variables*.
 - **Native Interactions** (Click/Scroll-Into-View/Page-Load triggers → toggle class, show/hide) —
