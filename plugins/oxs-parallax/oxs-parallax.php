@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oxygen Skills Parallax
  * Description: Portable scroll-linked parallax. Mark any element with the class <code>oxs-plx</code>; configure via CSS custom properties <code>--plx-from</code>/<code>--plx-to</code>/<code>--plx-scale-from</code>/<code>--plx-scale-to</code> (inline style, element class, or Oxygen Variables). Two modes, switchable site-wide under Settings → Parallax: <strong>scroll-driven</strong> (scrubbed to scroll, reverses on scroll-up) and <strong>one-off</strong> (reveals in once, then holds). Per-element override via <code>oxs-plx--scroll</code> / <code>oxs-plx--oneoff</code>. Respects prefers-reduced-motion.
- * Version: 1.3.1
+ * Version: 1.3.2
  * Author: zstudios
  * License: GPL-2.0-or-later
  *
@@ -19,7 +19,7 @@
  */
 if (!defined('ABSPATH')) { exit; }
 
-const OXS_PLX_VER = '1.3.1';
+const OXS_PLX_VER = '1.3.2';
 
 /* ---- assets ---- */
 add_action('wp_enqueue_scripts', function () {

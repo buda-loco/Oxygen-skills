@@ -1,20 +1,17 @@
-/* oxs-parallax runtime — two responsibilities:
+/* oxs-parallax runtime. Scroll-mode effects run as pure CSS on the compositor (view() timeline);
+ * this script only covers what CSS can't do on its own:
  *
- *   1. ONE-OFF mode (all browsers): an IntersectionObserver adds .oxs-plx--in the first time a
- *      one-off element enters the viewport; the CSS transition does the reveal, then it holds.
- *      Scrolling back never rewinds it (we unobserve after the first trigger).
+ *   1. One-off PARALLAX  — IntersectionObserver adds .oxs-plx--in on first entry; CSS transition
+ *                          does the move, then holds (unobserved, so it never rewinds).
+ *   2. Scroll-mode PARALLAX fallback — where view() is unsupported, an IO + one-rAF loop writes
+ *                          el.style.translate/scale from cached bounds. Idle when view() exists.
+ *   3. REVEALS — arms one-off / unsupported reveal elements (.oxs-reveal--armed → --in). Scroll-mode
+ *                reveals with view() support are pure CSS and need nothing here.
  *
- *   2. SCROLL-DRIVEN fallback (only where CSS scroll timelines are unsupported): the classic
- *      IntersectionObserver + one-rAF engine writes el.style.translate/scale from cached bounds.
- *      On browsers WITH animation-timeline: view(), the CSS handles scroll mode and this engine
- *      stays idle.
- *
- *   mode resolution per element: .oxs-plx--oneoff / .oxs-plx--scroll win; otherwise the global
- *   <html> class (oxs-plx-mode-oneoff → one-off, anything else → scroll).
- *
- *   prefers-reduced-motion: CSS neutralises both modes; the scroll engine also tears down.
- *   Test hook: window.OXS_PLX_FORCE_FALLBACK forces the scroll fallback (test.html only).
- *   Dynamic content: window.oxsPlxRefresh() re-scans both engines.
+ * Mode per element (see modeFor): a --off/--oneoff/--scroll class wins, else the global <html>
+ * class (oxs-plx-mode-off|scroll|oneoff), else off.
+ * prefers-reduced-motion: CSS neutralises everything; the parallax fallback also tears down.
+ * Test hook: window.OXS_PLX_FORCE_FALLBACK. Dynamic content: window.oxsPlxRefresh().
  */
 (function () {
   'use strict';
@@ -23,13 +20,16 @@
   var native = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('animation-timeline: view()');
   var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
-  function modeOf(el) {
-    if (el.classList.contains('oxs-plx--off'))    { return 'off'; }
-    if (el.classList.contains('oxs-plx--oneoff')) { return 'oneoff'; }
-    if (el.classList.contains('oxs-plx--scroll')) { return 'scroll'; }
+  // Resolve the effective mode for an element. `kind` is 'oxs-plx' (parallax) or 'oxs-reveal'
+  // (reveals): a per-element --off/--oneoff/--scroll class wins, else the global <html> mode,
+  // else 'off' (the default when no mode is set).
+  function modeFor(el, kind) {
+    if (el.classList.contains(kind + '--off'))    { return 'off'; }
+    if (el.classList.contains(kind + '--oneoff')) { return 'oneoff'; }
+    if (el.classList.contains(kind + '--scroll')) { return 'scroll'; }
     if (root.classList.contains('oxs-plx-mode-scroll')) { return 'scroll'; }
     if (root.classList.contains('oxs-plx-mode-oneoff')) { return 'oneoff'; }
-    return 'off'; // default when no mode is set on <html>
+    return 'off';
   }
 
   /* =========================================================================
@@ -40,7 +40,7 @@
     if (oneoffIO) { oneoffIO.disconnect(); oneoffIO = null; }
     var els = [];
     var nodes = document.querySelectorAll('.oxs-plx');
-    for (var i = 0; i < nodes.length; i++) { if (modeOf(nodes[i]) === 'oneoff') { els.push(nodes[i]); } }
+    for (var i = 0; i < nodes.length; i++) { if (modeFor(nodes[i],'oxs-plx') === 'oneoff') { els.push(nodes[i]); } }
     if (!els.length) { return; }
     if (!('IntersectionObserver' in window)) {
       for (var j = 0; j < els.length; j++) { els[j].classList.add('oxs-plx--in'); }
@@ -75,7 +75,7 @@
     var nodes = document.querySelectorAll('.oxs-plx');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
-      if (modeOf(el) !== 'scroll') { continue; } // one-off handled by engine #1
+      if (modeFor(el,'oxs-plx') !== 'scroll') { continue; } // one-off handled by engine #1
       el.style.translate = ''; el.style.scale = '';
       var r = el.getBoundingClientRect();
       items.push({
@@ -144,21 +144,13 @@
      3. REVEALS — arm one-off / fallback reveal elements. Scroll-mode reveals on
         browsers with view() support are pure CSS and need no JS here.
      ========================================================================= */
-  function revealModeOf(el) {
-    if (el.classList.contains('oxs-reveal--off'))    { return 'off'; }
-    if (el.classList.contains('oxs-reveal--oneoff')) { return 'oneoff'; }
-    if (el.classList.contains('oxs-reveal--scroll')) { return 'scroll'; }
-    if (root.classList.contains('oxs-plx-mode-scroll')) { return 'scroll'; }
-    if (root.classList.contains('oxs-plx-mode-oneoff')) { return 'oneoff'; }
-    return 'off';
-  }
   var revealIO = null;
   function collectReveals() {
     if (revealIO) { revealIO.disconnect(); revealIO = null; }
     var jsEls = [];
     var nodes = document.querySelectorAll('.oxs-reveal');
     for (var i = 0; i < nodes.length; i++) {
-      var m = revealModeOf(nodes[i]);
+      var m = modeFor(nodes[i],'oxs-reveal');
       if (m === 'off') { continue; }                                 // visible, no reveal
       if (m === 'scroll' && native && !window.OXS_PLX_FORCE_FALLBACK) { continue; } // pure CSS
       jsEls.push(nodes[i]);                                          // one-off or unsupported → JS
