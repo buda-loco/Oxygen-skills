@@ -916,6 +916,19 @@ plugin, since Oxygen has no native equivalent:
   while in view), writing `el.style.translate` — symmetric semantics with the keyframes.
 - `prefers-reduced-motion` disables both. Ship a `test.html` exercising precedence/rotate/
   fallback/reduced-motion. MUST-READ trap: §overflow-hidden-kills-view-timeline.
+- **Reveals on the same engine** (v1.3): entrance-style reveals now ride oxs-parallax too, so they
+  obey the SAME global mode — in **scroll** mode a reveal is a scroll PLAYHEAD (scrubs in, reverses
+  on scroll-up); **one-off** = play-once-and-hold; **off** = visible. Classes: `oxs-reveal` +
+  direction (`--up/--down/--left/--right/--fade/--zoom`) + stagger steps (`--d1..--d10`, which offset
+  the scroll window in scroll mode and the transition delay in one-off). This let us DELETE the GSAP
+  dependency entirely: `bt_entrance()`/`bt_stagger()` now emit reveal classes (no native
+  entrance_animation), and the write-on splits words into `.bt-writeon__w.oxs-reveal` spans with an
+  incrementing `--rv-start` (word-by-word scrubbed reveal) — global.js just preps the DOM and calls
+  `window.oxsPlxRefresh()`. ⚠ CRITICAL: view()-based reveals hit the overflow trap on EVERY section
+  (not just parallax hosts) — a single `overflow:hidden` ancestor freezes the reveal at "visible".
+  Fix is the global `overflow:hidden;overflow:clip` sweep across all section CSS. Fail-safe: hidden
+  state is gated (CSS `@supports`/`--armed`) so off-mode, reduced-motion, or a JS failure = visible.
+  Builder usage for other devs: plugins/oxs-parallax/USAGE-IN-BUILDER.md.
 - **Modes** (v1.2, global option + per-element override): the plugin ships a Settings → Parallax
   radio writing a `<html>` class (`oxs-plx-mode-off|scroll|oneoff`, emitted in an early `<head>`
   script before paint). **off** = default on fresh installs (nothing animates until opted in);

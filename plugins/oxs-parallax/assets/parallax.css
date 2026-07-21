@@ -64,3 +64,72 @@
 /* grow: scales UP as the element travels (1→1.12). SCROLL-MODE ONLY — in one-off it settles to
    rest (scale 1) and shows no growth, since "grow" is a scroll-transit effect by nature. */
 .oxs-plx--grow { --plx-from: 0px; --plx-to: 0px; --plx-scale-from: 1; --plx-scale-to: 1.12; }
+
+
+/* ==========================================================================
+   REVEALS — scroll-driven entrance animations that share the SAME global mode
+   as the parallax (Settings → Parallax):
+     scroll  → the reveal is scrubbed to the element ENTERING view and REVERSES
+               when you scroll back up (a scroll playhead — pure CSS, compositor).
+     one-off → plays once on entry, then holds (JS adds .oxs-reveal--in).
+     off     → no animation; content is fully visible.
+   Add .oxs-reveal + a direction modifier to any element. Per-element mode
+   override: .oxs-reveal--scroll / .oxs-reveal--oneoff / .oxs-reveal--off.
+   FAIL-SAFE: content is only ever hidden while a reveal is genuinely active —
+   off mode, reduced-motion, or a JS failure all leave it visible.
+   ========================================================================== */
+
+/* direction / style presets — set the offset the element reveals FROM */
+.oxs-reveal--up    { --rv-y: 26px;  --rv-x: 0px; }
+.oxs-reveal--down  { --rv-y: -26px; --rv-x: 0px; }
+.oxs-reveal--left  { --rv-x: -34px; --rv-y: 0px; }
+.oxs-reveal--right { --rv-x: 34px;  --rv-y: 0px; }
+.oxs-reveal--fade  { --rv-x: 0px;   --rv-y: 0px; }
+.oxs-reveal--zoom  { --rv-s: .9; }
+
+/* stagger steps — used by BOTH modes: --rv-start delays the scroll-entry window (scroll mode),
+   --rv-delay delays the transition (one-off mode). Add .oxs-reveal--d1 … --d10 to siblings. */
+.oxs-reveal--d1  { --rv-start: 4%;  --rv-delay: .07s; }
+.oxs-reveal--d2  { --rv-start: 8%;  --rv-delay: .14s; }
+.oxs-reveal--d3  { --rv-start: 12%; --rv-delay: .21s; }
+.oxs-reveal--d4  { --rv-start: 16%; --rv-delay: .28s; }
+.oxs-reveal--d5  { --rv-start: 20%; --rv-delay: .35s; }
+.oxs-reveal--d6  { --rv-start: 24%; --rv-delay: .42s; }
+.oxs-reveal--d7  { --rv-start: 28%; --rv-delay: .49s; }
+.oxs-reveal--d8  { --rv-start: 32%; --rv-delay: .56s; }
+.oxs-reveal--d9  { --rv-start: 36%; --rv-delay: .63s; }
+.oxs-reveal--d10 { --rv-start: 40%; --rv-delay: .70s; }
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes oxs-reveal {
+    from { opacity: 0; translate: var(--rv-x, 0) var(--rv-y, 26px); scale: var(--rv-s, 1); }
+    to   { opacity: 1; translate: 0 0; scale: 1; }
+  }
+
+  /* SCROLL — scrubbed to the element's entry; reverses on scroll-up (playhead).
+     --rv-start / --rv-span offset the entry window (per-item stagger, per-word write-on). */
+  @supports (animation-timeline: view()) {
+    html.oxs-plx-mode-scroll .oxs-reveal:not(.oxs-reveal--off):not(.oxs-reveal--oneoff),
+    .oxs-reveal.oxs-reveal--scroll:not(.oxs-reveal--off) {
+      animation: oxs-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--rv-start, 0%))
+                       entry calc(var(--rv-start, 0%) + var(--rv-span, 55%));
+    }
+  }
+
+  /* ONE-OFF (+ fallback when view() is unsupported): JS adds .oxs-reveal--armed to hide, then
+     .oxs-reveal--in to reveal once. Hidden state is gated on --armed so a JS failure = visible. */
+  .oxs-reveal.oxs-reveal--armed:not(.oxs-reveal--off) {
+    opacity: 0;
+    translate: var(--rv-x, 0) var(--rv-y, 26px);
+    scale: var(--rv-s, 1);
+    transition: opacity   var(--rv-dur, .6s) var(--rv-ease, cubic-bezier(.2, .7, .2, 1)) var(--rv-delay, 0s),
+                translate var(--rv-dur, .6s) var(--rv-ease, cubic-bezier(.2, .7, .2, 1)) var(--rv-delay, 0s),
+                scale     var(--rv-dur, .6s) var(--rv-ease, cubic-bezier(.2, .7, .2, 1)) var(--rv-delay, 0s);
+  }
+  .oxs-reveal.oxs-reveal--armed.oxs-reveal--in:not(.oxs-reveal--off) {
+    opacity: 1; translate: 0 0; scale: 1;
+  }
+}
+

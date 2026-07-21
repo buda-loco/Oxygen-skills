@@ -140,9 +140,50 @@
     collectScroll();
   }
 
+  /* =========================================================================
+     3. REVEALS — arm one-off / fallback reveal elements. Scroll-mode reveals on
+        browsers with view() support are pure CSS and need no JS here.
+     ========================================================================= */
+  function revealModeOf(el) {
+    if (el.classList.contains('oxs-reveal--off'))    { return 'off'; }
+    if (el.classList.contains('oxs-reveal--oneoff')) { return 'oneoff'; }
+    if (el.classList.contains('oxs-reveal--scroll')) { return 'scroll'; }
+    if (root.classList.contains('oxs-plx-mode-scroll')) { return 'scroll'; }
+    if (root.classList.contains('oxs-plx-mode-oneoff')) { return 'oneoff'; }
+    return 'off';
+  }
+  var revealIO = null;
+  function collectReveals() {
+    if (revealIO) { revealIO.disconnect(); revealIO = null; }
+    var jsEls = [];
+    var nodes = document.querySelectorAll('.oxs-reveal');
+    for (var i = 0; i < nodes.length; i++) {
+      var m = revealModeOf(nodes[i]);
+      if (m === 'off') { continue; }                                 // visible, no reveal
+      if (m === 'scroll' && native && !window.OXS_PLX_FORCE_FALLBACK) { continue; } // pure CSS
+      jsEls.push(nodes[i]);                                          // one-off or unsupported → JS
+    }
+    if (!jsEls.length) { return; }
+    for (var a = 0; a < jsEls.length; a++) { jsEls[a].classList.add('oxs-reveal--armed'); } // hide
+    if (!('IntersectionObserver' in window)) {
+      for (var b = 0; b < jsEls.length; b++) { jsEls[b].classList.add('oxs-reveal--in'); }
+      return;
+    }
+    revealIO = new IntersectionObserver(function (entries) {
+      for (var e = 0; e < entries.length; e++) {
+        if (entries[e].isIntersecting) {
+          entries[e].target.classList.add('oxs-reveal--in');
+          revealIO.unobserve(entries[e].target); // once — one-off never rewinds
+        }
+      }
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.01 });
+    for (var o = 0; o < jsEls.length; o++) { revealIO.observe(jsEls[o]); }
+  }
+
   /* ============================ orchestration ============================ */
   function init() {
-    collectOneOff(); // one-off works regardless of reduced-motion (CSS gates the visuals)
+    collectOneOff();  // one-off parallax
+    collectReveals(); // reveals (one-off / fallback arming)
     if (!runFallback) { return; }
     if (mq && mq.matches) { teardownScroll(); return; }
     armScroll();
@@ -151,6 +192,7 @@
   if (mq && mq.addEventListener) { mq.addEventListener('change', init); }
   window.oxsPlxRefresh = function () {
     collectOneOff();
+    collectReveals();
     if (runFallback) { if (armed) { collectScroll(); } else { init(); } }
   };
 
