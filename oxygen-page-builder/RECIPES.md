@@ -923,5 +923,13 @@ plugin, since Oxygen has no native equivalent:
   child's containing block and collapses inset:0). Chain overflow:clip on the hero.
 - **Stagger reveals**: pair with native entrance animations — same type, incremental delay per
   sibling (PROPERTIES §Entrance animations); reverse the index order for a backward wave.
+- **CODE-RENDERED items** (PhpCode/HTML loops — logo grids, slider cards) can't ride the native
+  per-element runtime. Piggyback the GSAP+ScrollTrigger that Oxygen already INLINES on any page
+  using entrance animations: `gsap.from(items,{opacity:0,y:18,stagger:.06,scrollTrigger:{trigger:
+  grid,start:'top 85%',once:true}})`. Rules: guard `window.gsap && window.ScrollTrigger` (absent
+  on pages without entrance anims → items just render visible — fail-safe by construction, since
+  gsap.from means no CSS ever hides them); retry init at window `load` (the inlined deps execute
+  late); respect reduced-motion; and if the wrapper node had its own entrance animation, REMOVE
+  it (double-animation).
 Build-script helpers: `bt_entrance($node,$type)` sets the native animation property;
 `bt_plx($node,$preset)`-style helper appends the `oxs-plx` marker classes — wrap any tree node.
