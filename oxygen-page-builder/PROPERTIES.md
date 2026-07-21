@@ -232,10 +232,12 @@ $node['data']['properties']['settings']['animations']['entrance_animation'] =
 flipLeft | flipRight | zoomIn | zoomOut`. Renders `data-entrance="<type>"`; Oxygen auto-injects
 GSAP + ScrollTrigger + `entrance.js/css` + an inline `new BreakdanceEntrance(sel, cfg)` ONLY on
 pages that use it (dependency-conditional; scripts are INLINED — don't grep for `<script src>`).
-**`delay` unit-shape VERIFIED** (io-ts VALID + runtime consumes it): 
-`'delay' => ['number'=>240,'unit'=>'ms','style'=>'240ms']` — `duration` and `advanced.distance/offset`
-use the same `{number,unit,style}` shape per the runtime's own defaults (entrance.js), but only
-`delay` is write-verified; `once`/`ease`/`disable_at` remain unsampled — set those in the builder
+**`delay`, `duration` AND `advanced.ease` write-VERIFIED** (io-ts VALID + runtime consumes them):
+`'delay'/'duration' => ['number'=>700,'unit'=>'ms','style'=>'700ms']`; `'advanced' => ['ease'=>'expo.out']`
+(ease = plain GSAP string: linear, expo.in/out/inOut, power1-4.in/out/inOut, back.*, elastic.*, bounce.* —
+see entrance/constants.php EASING_TYPES). **The runtime DEEP-merges options over its defaults**
+(BreakdanceFrontend.utils.mergeObjects), so a partial `advanced` object is safe — distance/offset
+defaults survive. `once`/`disable_at`/`distance` remain write-unsampled — set those in the builder
 (source: `oxygen/plugin/animations/entrance/{control,attributes,dependencies}.php`).
 **Stagger pattern**: nearby siblings (columns/cards/bubbles) get the same `animation_type` with
 incremental delays (e.g. 0/120/240ms); reverse the index for a backward wave. Verified at scale.
