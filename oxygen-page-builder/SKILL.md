@@ -87,7 +87,17 @@ All in `scripts/` next to this file; site must be running in Local:
 scripts/wp-eval.sh build.php          # run a PHP script via wp eval-file (env/socket/phar handled)
 scripts/wp-eval.sh -- post list       # any wp-cli command
 scripts/wp-eval.sh scripts/validate-tree.php <postId> fetch   # ALWAYS after writing a tree
+
+scripts/verify-site.sh [ids…] [--builder] [--detect]   # THE VERIFY BATTERY — run this, not the
+                                       # individual checks: trees + selectors + panel lint +
+                                       # front-end a11y/SEO, optionally the builder IO-TS pass
+                                       # (needs OXY_LOGIN_URL) and the design detector
+scripts/design-detect.sh <url>         # design antipatterns (handles the puppeteer setup)
+node scripts/style-snapshot.mjs capture <url> before.json   # prove a refactor changed nothing:
+node scripts/style-snapshot.mjs diff before.json after.json # capture, refactor, capture, diff
 ```
+`assets/` holds copyable per-project mu-plugins: `mu-oxygen-entrance-fixes.php` (entrance a11y +
+no-JS + ghost-init guard) and `mu-oxygen-dynamic-related.php` (relationship-hop dynamic fields).
 ```php
 require '/path/to/oxygen-page-builder/scripts/lib.php';
 $id = wp_insert_post([...]);
@@ -107,21 +117,81 @@ elements return `false` (e.g. Advancedslider) — then read the element source p
 keys), `oxy_selector`+`oxy_save_selectors` (merge-by-name), `oxy_template_settings`
 (JSON-string location meta), `oxy_nid`/`oxy_uuid` (static registries — `wp eval-file` is
 function-scoped, `global` silently fails).
+**`oxy_probe($groups, $expect)`** — golden-sample an unknown property shape: registers a throwaway
+selector, compiles, reports which declarations actually reached the CSS, restores the store
+byte-for-byte. Use it before trusting ANY undocumented group ("the panel has a control" ≠ "my
+guessed shape emits"); it handles the minified-CSS and palette-sentinel traps for you.
+**`oxy_delete_selectors($names, $force=false)`** — the removal `oxy_save_selectors` can't do.
+Refuses names still referenced by a live tree (revisions don't count); returns `needs_regen`, and
+when true you must call `oxy_regen_selector_css()` **from a fresh process** (GOTCHAS §3).
 - Worked examples (page build, native loop, component placement, dynamic data, CSS injection):
   `scripts/examples/` (patterns to copy).
 
 ## Workflow for any build
+0. **Packaging decision — PROMPT the user, don't silently pick.** Before building any new section
+   or widget, classify it: (a) one-off page tree; (b) reusable **Component** (`oxygen_block` —
+   shows in the builder's Components panel, drags onto any page, content fully click-editable,
+   but NO per-instance overrides — same content everywhere it's placed); (c) **custom Element**
+   (own controls in the + panel, usually backed by a CPT so content is wp-admin work — PROPERTIES
+   §Custom element plugin). When the piece could plausibly recur on other pages, or is an
+   interactive/data-driven widget the client might want to drop elsewhere (a video wall, a quiz,
+   a logo cloud, a stats band), ASK the user which packaging they want (AskUserQuestion with the
+   trade-offs) — packaging determines who can edit what later and is expensive to change once
+   content exists. Defaults if the user leaves it to you: page section → Component; markup + JS
+   behaviour + own settings → custom Element + CPT; truly page-specific → plain tree, still built
+   from classed native elements.
 1. Write the tree with lib.php (or copy a `scripts/examples/` pattern). Unknown shape? `oxy_golden()`,
    or build once in the real builder + read `_oxygen_data` back.
 2. Brand-style every new class (rule 1). Where CSS lives: global = the HEADER template's CssCode node (loads after the engine reset, before page CSS → builder edits still win)
    (preserve it when rebuilding #15!); page-local = an `oxy_css()` node on the page.
-3. Verify — all four, every time:
+3. Verify — all five, every time:
    - `scripts/wp-eval.sh scripts/validate-tree.php <id> fetch` (io-ts invariants + trap checks + front-end 200)
    - open `http://example.local?oxygen=builder&id=<id>` — must load with no "IO-TS decoding failed"
    - CSS: check `element.matches(sel)` in the browser console — NEVER trust "the rule is in the file"
      (see GOTCHAS.md §dead WC selector).
    - **a11y + SEO (rule 6):** run the front-end audit snippet in SEO.md §a11y-seo-audit — 0 alt-less
      imgs, 0 span-buttons, exactly 1 H1, and title/description/OG/canonical/lang all present.
+   - **panel-expressibility:** `scripts/wp-eval.sh scripts/examples/lint-panel-css.php` — every
+     `⚠ panel-lint` finding is a declaration a property group can express. Move it, or justify it
+     in-place with `/*panel-exempt: reason*/`. Zero unexplained findings = done. (The same lint
+     fires from `oxy_selector()` at write time, so a build run that prints warnings is telling you
+     about ITS OWN sins, not historical ones.)
+   - **design antipatterns (optional, if the `impeccable` skill is installed):**
+     `npx -y impeccable detect http://<site>/` from a dir with puppeteer available
+     (`PUPPETEER_SKIP_DOWNLOAD=1 npm i puppeteer` + `PUPPETEER_EXECUTABLE_PATH` to system Chrome).
+     It renders the page in headless Chrome and reports design tells AND mechanical defects.
+     **Triage before acting:** `script-error` and `content-hidden-at-rest` are always real bugs
+     (they caught an entrance replay-by-default and 9 ghost-init crashes on a build this skill's
+     own audits had passed). Taste findings (`ai-color-palette`, `overused-font`, `kicker-above-
+     heading`…) get judged against the BRAND MANUAL — the brief wins; a locked brand palette or
+     face is never a finding to fix. `low-contrast … opacity stack` during entrance staggers is a
+     mid-animation screenshot, not a defect — see PROPERTIES §Entrance.
+
+## Design direction & taste (bridge to the design skills)
+
+This skill owns the Oxygen MECHANICS — shapes, panels, verification. Design DIRECTION is owned by
+the design-taste skills when they're installed (`design-taste-frontend` for anti-slop bias
+correction on new surfaces, `impeccable` for critique/audit/refinement playbooks). Load one BEFORE
+designing any new page or section from scratch; skip them when porting an approved design — there,
+the mockup/brand manual is the brief and **the brief always wins** over any taste rule (a brand
+lilac stays lilac even though a detector calls it "AI purple").
+
+The handful of their rules that recur on builder-page work, distilled (full sets live in those
+skills):
+
+- **One entrance moment, not one per section** — and entrances are `advanced.once => true`, below
+  the fold only (PROPERTIES §Entrance). Scroll-scrub and entrance are the two motion systems; a
+  third needs a reason.
+- **No duplicate CTA intent on a page** — one label per intent (contact, test, buy), reused
+  verbatim wherever that intent appears.
+- **Eyebrow/kicker restraint** — max ~1 per 3 sections, and never the same eyebrow text twice on
+  one page. If a section needs a label, its position on the page usually already labels it.
+- **Layout-family repetition** — a section layout (cards-row, split, full-quote) appears at most
+  once per page; two adjacent sections must not read as the same template.
+- **Uppercase is for short labels** — a 40+ character all-caps CTA label is a copy problem, not a
+  styling one.
+- **States are part of done** — hover, focus, disabled, loading, empty, error; this skill's a11y
+  checks cover focus/contrast, the design skills cover the rest.
 
 ## Work general → specific (CSS and templates)
 The single highest-leverage habit. Push every decision as far UP its ladder as it can live; step down
@@ -130,8 +200,9 @@ cleanly (that's the cascade / template-priority doing the work for you), and the
 small, auditable, and idempotent.
 
 **CSS ladder (top = do first):**
-1. **Global Settings** — palette swatches, heading/body fonts, container width. One write, every
-   picker and element inherits it.
+1. **Global Settings** — palette swatches, heading/body fonts, container width, and site-wide
+   Button styling (`settings.buttons.primary/secondary` — PROPERTIES §Global Settings → Buttons).
+   One write, every picker and element inherits it.
 2. **Global stylesheet** (ONE CssCode node in the HEADER template — after the engine reset, before page CSS, so builder edits win) — `:root`
    design tokens (`--c-*`), base element classes (`.container`, `.section`, `.btn`, `.prose`),
    and brand overrides for third-party markup (WooCommerce). Grow it only via MARKED, idempotent
@@ -176,6 +247,14 @@ small, auditable, and idempotent.
   SHARED rules (loop-context, cross-class groups) and RichText inner-tag typography stay in the
   reference stylesheet. Rule: an element without a class gives the user no design-panel handle —
   never ship one.
+- **`custom_css` is GATED, not merely discouraged.** `oxy_selector()` lints every custom_css block
+  at write time (`oxy_panel_lint()`, lib.php) and warns on any plain `:selector{…}` declaration a
+  property group can express — typography, background-color, spacing, border-radius, size, display/
+  gap, position. Legitimate custom CSS is exactly: pseudo-states, descendant/context rules
+  (RichText inner tags, ground flips, third-party markup), non-width media queries, custom
+  properties, and the overflow double-write — everything else either moves to a group or carries an
+  in-code justification: `/*panel-exempt: <why no group works>*/`. Audit an existing site with
+  `scripts/examples/lint-panel-css.php`; a build whose run output prints `⚠ panel-lint` is not done.
 
 ## Where to look
 | Need | File |
@@ -205,21 +284,20 @@ features — for each, use the golden-sample workflow (build once in the real bu
 - **Element display conditions & template condition arrays** (AND/OR rules; custom PHP conditions) —
   official docs: *Dynamic Data → Conditions*, *Templating → Conditions / Applying Templates*. This
   skill only uses template `type` + `priority`.
-- **Components / Global Blocks** — PARTIALLY SHAPED (2026-07-21): a reusable Component IS an
-  `oxygen_block` post with a normal `_oxygen_data` tree — create with `wp_insert_post` + `oxy_write_tree`,
-  it shows in the builder Components panel, drags onto pages, stays fully editable (RECIPES §Reusable
-  Global Block). Still UNSHAPED + risky: **Component Properties** (per-instance overrides via
-  `ComponentData{componentId,targets,properties}`) — the FE override hook `setCurrentComponent` is
-  defined but never called in render, so no golden sample exists; duplicate the block for distinct text
-  instead. Official docs: *Design → Components*.
+- ~~**Components / Global Blocks**~~ — **NOW FULLY SHAPED (2026-08-06).** A reusable Component IS an
+  `oxygen_block` post with a normal `_oxygen_data` tree (RECIPES §Reusable Global Block), AND
+  **Component Properties per-instance overrides WORK** in 6.1.0 — the old "hook never called,
+  duplicate the block instead" note was wrong/outdated. It needs BOTH halves: `editableProperties`
+  on the block's node and `targets`+`properties` on each placement. Full shape and the render path:
+  PROPERTIES §Component Properties. Reach for this before duplicating a component to change a string.
 - **Variables** (Color/Number/Unit/FontFamily/ImageURL collections, per-element overrides) — this
   skill covers only the Global Settings palette. Official docs: *Design → Variables*.
-- **Native Interactions** (Click/Scroll-Into-View/Page-Load triggers → toggle class, show/hide) —
-  still unshaped, BUT **entrance animations ARE now shaped** (PROPERTIES §Entrance animations,
-  verified) — use those for scroll reveals instead of hand-rolled IntersectionObserver nodes.
-  This skill still hand-rolls **scroll-scrubbed /
-  autoplay-once Lottie + hover-play video** (RECIPES §Media & motion); Interactions are the
-  builder-editable alternative. Official docs: *Design → Interactions*.
+- ~~**Native Interactions**~~ — **NOW SHAPED (2026-08-06, click-toggle verified in a browser):**
+  `settings.interactions.interactions`, full trigger/action vocabulary in PROPERTIES §Interactions.
+  Together with entrance animations (PROPERTIES §Entrance) this covers most of what used to need a
+  JavaScriptCode node — reach for them BEFORE hand-rolling show/hide, tabs, toggles or reveals.
+  Still hand-rolled here: scroll-scrubbed / autoplay-once Lottie and hover-play video
+  (RECIPES §Media & motion). Official docs: *Design → Interactions*.
 - **ACF / Meta Box dynamic data** — MOSTLY CLOSED: content model (RECIPES §ACF Pro content
   model), the text binding shape (`acf_field_<FIELD_KEY>` + `text_dynamic_meta`,
   PROPERTIES §Dynamic data binding), and now the **ACF options-page + image-repeater loop**

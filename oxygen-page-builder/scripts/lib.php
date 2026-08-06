@@ -503,8 +503,92 @@ function oxy_validate_tree_json(string $json, bool $checkSlugs = false): array {
  * $breakpoints — extra per-breakpoint group maps as SIBLINGS of breakpoint_base, e.g.
  *               ['breakpoint_phone_landscape' => ['layout' => [...]]] (compiles inside the media query).
  */
+/**
+ * Panel-expressibility lint — the enforcement arm of "design options in panels,
+ * not custom code". Called by oxy_selector() on every registration; also
+ * runnable against a live site via examples/lint-panel-css.php.
+ *
+ * Flags declarations in custom_css that a selector PROPERTY GROUP can express
+ * (typography/background/spacing/borders/size/layout/position — the panel is
+ * click-editable, custom_css is not). A property group styles THE CLASS
+ * ITSELF, so only blocks whose selector is exactly `:selector` (or a comma
+ * list of it) are linted. Everything else is definitionally beyond a panel
+ * and exempt:
+ *   - state/pseudo contexts (:hover, :focus-visible, ::before, :not…)
+ *   - attribute contexts ([data-…], [aria-…], [href])
+ *   - descendant / compound contexts — RichText inner tags (`:selector p`,
+ *     `:selector li`), ground flips (`.sec--navy :selector`), third-party and
+ *     engine inner markup (`.bde-*`, `.swiper*`) — no element to attach to
+ *   - non-width @media (prefers-reduced-motion etc.) — width queries are NOT
+ *     exempt: those are breakpoint_* sibling groups
+ *   - custom properties (--*) and the overflow double-write trick
+ *   - any block carrying an explicit escape hatch: /*panel-exempt: <reason>* /
+ *     — legitimate custom CSS must SAY WHY, in the code, where review sees it.
+ *
+ * Warnings only, never fatal: the goal is that every sin is visible in the
+ * build output at the moment it's written, with its fix named.
+ */
+function oxy_panel_lint(string $name, string $css): array {
+    static $panelProps = [
+        'color' => 'typography', 'font-family' => 'typography', 'font-size' => 'typography',
+        'font-weight' => 'typography', 'line-height' => 'typography', 'letter-spacing' => 'typography',
+        'text-transform' => 'typography', 'text-align' => 'typography',
+        'background-color' => 'background',
+        'padding' => 'spacing', 'padding-top' => 'spacing', 'padding-right' => 'spacing',
+        'padding-bottom' => 'spacing', 'padding-left' => 'spacing',
+        'margin' => 'spacing', 'margin-top' => 'spacing', 'margin-right' => 'spacing',
+        'margin-bottom' => 'spacing', 'margin-left' => 'spacing',
+        'border-radius' => 'borders',
+        'width' => 'size', 'max-width' => 'size', 'height' => 'size', 'min-height' => 'size',
+        'display' => 'layout', 'gap' => 'layout',
+        'position' => 'position', 'top' => 'position', 'right' => 'position',
+        'bottom' => 'position', 'left' => 'position', 'z-index' => 'position',
+    ];
+    // Lint ONLY pure self-rules: `.__SEL__` alone (or a comma list of it).
+    // Any pseudo, descendant, compound, tag or attribute context is beyond a
+    // property group's reach and therefore legitimate custom CSS.
+    $selfOnly = '/^\s*\.__SEL__\s*(,\s*\.__SEL__\s*)*$/';
+
+    $warnings = [];
+    $scan = function (string $chunk, string $ctx) use (&$warnings, $panelProps, $selfOnly, $name) {
+        preg_match_all('/([^{}]+)\{([^{}]*)\}/s', $chunk, $blocks, PREG_SET_ORDER);
+        foreach ($blocks as [$all, $sel, $decls]) {
+            if (strpos($all, 'panel-exempt') !== false) continue;
+            // strip leading comments from the selector part before matching
+            $selClean = trim(preg_replace('#/\*.*?\*/#s', '', $sel));
+            if (!preg_match($selfOnly, $selClean)) continue;
+            $declsClean = preg_replace('#/\*.*?\*/#s', '', $decls);
+            if (strpos($declsClean, 'overflow:hidden;overflow:clip') !== false) continue; // the scroll-timeline trick
+            foreach (explode(';', $declsClean) as $d) {
+                $p = strtolower(trim(strtok($d, ':')));
+                if ($p === '' || str_starts_with($p, '--')) continue;
+                if (isset($panelProps[$p])) {
+                    $fix = $ctx === 'media'
+                        ? "a breakpoint_* sibling group"
+                        : "the `{$panelProps[$p]}` property group";
+                    $warnings[] = "$name: `$p` in " . trim($sel)
+                        . " is panel-expressible — move it to $fix, or mark /*panel-exempt: reason*/";
+                }
+            }
+        }
+    };
+
+    $css = str_replace(':selector', '.__SEL__', $css); // keep the placeholder out of pseudo regexes
+    // width @media blocks lint as breakpoint-expressible; other @media are exempt
+    $css = preg_replace_callback('/@media([^{]+)\{((?:[^{}]|\{[^{}]*\})*)\}/s',
+        function ($m) use ($scan) {
+            if (preg_match('/(min|max)-width/i', $m[1])) { $scan($m[2], 'media'); }
+            return '';
+        }, $css);
+    $scan($css, 'base');
+    return $warnings;
+}
+
 function oxy_selector(string $name, array $groups, string $customCss = '', array $breakpoints = []): array {
-    if ($customCss !== '') { $groups['custom_css'] = ['custom_css' => $customCss]; }
+    if ($customCss !== '') {
+        foreach (oxy_panel_lint($name, $customCss) as $w) { echo "⚠ panel-lint  $w\n"; }
+        $groups['custom_css'] = ['custom_css' => $customCss];
+    }
     // empty groups MUST serialize as {} not [] — io-ts rejects [] → builder "IO-TS decoding failed"
     $props = ['breakpoint_base' => ($groups ?: new \stdClass())];
     foreach ($breakpoints as $bp => $g) { $props[$bp] = $g; }
@@ -625,6 +709,115 @@ function oxy_save_selectors(array $newSelectors): void {
         json_encode(['selectors' => $selectors, 'collections' => $cur['collections'] ?? ['Default']])
     );
     oxy_read_selectors(true); // refresh the memoized store
+}
+
+/**
+ * DELETE selectors by name. `oxy_save_selectors()` merges and cannot remove.
+ *
+ * ⚠ Two engine behaviours make naive deletion silently fail (GOTCHAS §3):
+ *   - `saveSelectors` SKIPS CSS regeneration when the incoming list equals the
+ *     stored one, and
+ *   - regeneration reads through `getOxySelectors()`, which is STATICALLY
+ *     MEMOISED per process — so regenerating in the same process that deleted
+ *     rebuilds from the stale memo and the dead rule survives in the CSS.
+ *
+ * So this writes the store, then reports whether the compiled CSS is clean.
+ * When it returns `needs_regen`, run `\Breakdance\Render\generateCacheForGlobalSettings()`
+ * from a FRESH `wp eval-file` process (or call oxy_regen_selector_css() there).
+ *
+ * Refuses to delete a selector still referenced by a live tree unless $force —
+ * a tree keeps the uuid in meta.classes and would lose its design silently.
+ * Revisions don't count as live.
+ *
+ * @return array{deleted:string[], skipped:array<string,string>, needs_regen:bool}
+ */
+function oxy_delete_selectors(array $names, bool $force = false): array {
+    global $wpdb;
+    $cur = oxy_read_selectors(true);
+    $deleted = []; $skipped = [];
+
+    $keep = [];
+    foreach ($cur['selectors'] as $s) {
+        $name = $s['name'] ?? '';
+        if (!in_array($name, $names, true)) { $keep[] = $s; continue; }
+        if (!$force) {
+            $uuid = $s['id'] ?? '';
+            $n = $uuid ? (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID = m.post_id
+                  WHERE m.meta_key = '_oxygen_data' AND p.post_type != 'revision'
+                    AND m.meta_value LIKE %s", '%' . $wpdb->esc_like($uuid) . '%')) : 0;
+            $n += (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->postmeta} m JOIN {$wpdb->posts} p ON p.ID = m.post_id
+                  WHERE m.meta_key = '_oxygen_data' AND p.post_type != 'revision'
+                    AND m.meta_value LIKE %s", '%"' . $wpdb->esc_like($name) . '"%'));
+            if ($n > 0) { $skipped[$name] = "referenced by $n live tree(s) — pass \$force to delete anyway"; $keep[] = $s; continue; }
+        }
+        $deleted[] = $name;
+    }
+    if (!$deleted) { return ['deleted' => [], 'skipped' => $skipped, 'needs_regen' => false]; }
+
+    \Breakdance\BreakdanceOxygen\Selectors\saveSelectors(
+        json_encode(['selectors' => array_values($keep), 'collections' => $cur['collections'] ?? ['Default']]));
+    oxy_read_selectors(true);
+
+    $css = @file_get_contents(wp_get_upload_dir()['basedir'] . '/oxygen/css/oxy-selectors.css') ?: '';
+    $stale = false;
+    foreach ($deleted as $n) { if (strpos($css, '.' . $n . '{') !== false) { $stale = true; break; } }
+    return ['deleted' => $deleted, 'skipped' => $skipped, 'needs_regen' => $stale];
+}
+
+/** Recompile oxy-selectors.css. Call from a FRESH process after oxy_delete_selectors(). */
+function oxy_regen_selector_css(): bool {
+    \Breakdance\Render\generateCacheForGlobalSettings();
+    return file_exists(wp_get_upload_dir()['basedir'] . '/oxygen/css/oxy-selectors.css');
+}
+
+/**
+ * GOLDEN-SAMPLE a selector property shape: register a throwaway selector, compile,
+ * report which expected declarations actually reached the CSS, then restore the
+ * store byte-for-byte. Use before trusting any un-documented property group —
+ * "the panel has a control for it" does NOT mean the shape you guessed emits.
+ *
+ * $expect maps a label to the CSS substring that proves emission. Matching is
+ * done on WHITESPACE-STRIPPED css, because the compiled file is minified —
+ * a needle containing `: ` silently misses (this cost a full debug cycle).
+ *
+ * ⚠ Never use a value that already appears in the palette/Global Settings as a
+ * sentinel: `--bde-color-*` lines match it and every check false-passes.
+ *
+ * Example:
+ *   oxy_probe(['layout' => ['display' => 'grid']], ['display' => 'display:grid']);
+ *
+ * @return array{ok:bool, results:array<string,bool>, css:string} css = the probe's own rules
+ */
+function oxy_probe(array $groups, array $expect, array $breakpoints = [], string $name = 'zz-probe'): array {
+    $cur     = oxy_read_selectors(true);
+    $backup  = ['selectors' => $cur['selectors'], 'collections' => $cur['collections'] ?? ['Default']];
+    $cssPath = wp_get_upload_dir()['basedir'] . '/oxygen/css/oxy-selectors.css';
+
+    try {
+        $probe = oxy_selector($name, $groups, '', $breakpoints);
+        \Breakdance\BreakdanceOxygen\Selectors\saveSelectors(
+            json_encode(['selectors' => array_merge($backup['selectors'], [$probe]),
+                         'collections' => $backup['collections']]));
+        $css = (string) @file_get_contents($cssPath);
+        $flat = preg_replace('/\s+/', '', $css);
+
+        preg_match_all('/[^{}]*' . preg_quote($name, '/') . '[^{]*\{[^}]*\}/', $css, $m);
+        $own = implode("\n", array_map(fn($r) => trim(preg_replace('/\s+/', ' ', $r)), $m[0]));
+        $ownFlat = preg_replace('/\s+/', '', $own);
+
+        $results = [];
+        foreach ($expect as $label => $needle) {
+            // match within the PROBE's own rules, so palette/global lines can't false-pass
+            $results[$label] = strpos($ownFlat, preg_replace('/\s+/', '', $needle)) !== false;
+        }
+        return ['ok' => !in_array(false, $results, true), 'results' => $results, 'css' => $own];
+    } finally {
+        // restore byte-for-byte, then leave regeneration to a fresh process
+        \Breakdance\BreakdanceOxygen\Selectors\saveSelectors(json_encode($backup));
+        oxy_read_selectors(true);
+    }
 }
 
 /**

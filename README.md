@@ -79,7 +79,9 @@ Everything lives in [`oxygen-page-builder/`](oxygen-page-builder/).
 | [**PROPERTIES.md**](oxygen-page-builder/PROPERTIES.md) | The exact data shapes, for when you need to write them yourself. |
 | [**ELEMENTS.md**](oxygen-page-builder/ELEMENTS.md) | All 165 built-in elements and what each one is for. |
 | [**SEO.md**](oxygen-page-builder/SEO.md) | What WordPress gives you free, and a drop-in helper for the rest. |
-| [**scripts/**](oxygen-page-builder/scripts/) | The PHP toolbox, a validator, and a folder of worked example scripts. |
+| [**TYPOGRAPHY.md**](oxygen-page-builder/TYPOGRAPHY.md) | The default responsive type scale and spacing rhythm. |
+| [**scripts/**](oxygen-page-builder/scripts/) | The PHP toolbox, the verify battery, and a folder of worked example scripts. |
+| [**assets/**](oxygen-page-builder/assets/) | Copyable mu-plugins that repair known Oxygen defects. |
 
 ---
 
@@ -93,6 +95,17 @@ export OXY_SITE_PATH="/path/to/your-site/app"                 # your WordPress s
 ./scripts/wp-eval.sh scripts/validate-tree.php <postId> fetch # check it before trusting it
 ./scripts/wp-eval.sh -- post list                             # any wp-cli command
 ```
+
+Or check the whole site in one command:
+
+```bash
+./scripts/verify-site.sh                    # trees, selectors, panel-CSS lint, a11y + SEO
+./scripts/verify-site.sh --builder --detect # + every tree opens in the builder, + design review
+```
+
+`verify-site.sh` exists because a tree that validates and returns 200 can still be
+broken: the builder runs a stricter schema than the renderer, and neither notices an
+alt-less image or a page with no `<h1>`. It reports one pass/fail for the lot.
 
 A whole page is a few lines:
 

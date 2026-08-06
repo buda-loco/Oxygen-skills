@@ -176,6 +176,159 @@ $s = ['settings' => [ /* colors, typography, containers */ ], 'builderPrefix' =>
   (each `{number,unit,style}`), `settings.containers.column_gap` — the native way to cap content width
   (inner `.section-container` uses `--bde-section-width`; content aligns LEFT by default).
 
+## Dynamic data across a RELATIONSHIP (ACF post_object → related post's image)
+Oxygen ships no native hop for a related post's FEATURED IMAGE: `AcfPostField extends PostField`
+reaches a related post but its handler only understands `post_field` (post_title, post_date,
+post_terms, `custom_field`+`custom_field_key`, or any WP_Post property) — and a featured image is
+not one; `PostFeaturedImageURL` resolves through `get_the_ID()`, i.e. the current loop post.
+Hence the old "one PhpCode leaf per relationship" workaround.
+
+**Register a field instead** — then any native element binds to it like a built-in, and the card
+keeps zero code nodes (rule 2). Copyable implementation:
+`assets/mu-oxygen-dynamic-related.php`. Shape:
+```php
+add_action('wp_loaded', function () {                       // fields collect on wp_loaded
+    if (!function_exists('\Breakdance\DynamicData\registerField')) return;   // guard: Oxygen off
+    \Breakdance\DynamicData\registerField(new class extends \Breakdance\DynamicData\StringField {
+        public function label()       { return 'Related featured image (URL)'; }
+        public function category()    { return 'Relation'; }
+        public function slug()        { return 'related_featured_image_url'; }
+        public function returnTypes() { return ['url']; }
+        public function controls()    { return [\Breakdance\Elements\control('relation_field',
+            'ACF field name', ['type'=>'text','layout'=>'vertical'])]; }
+        public function handler($attributes): \Breakdance\DynamicData\StringData { /* … */ }
+    });
+}, 20);
+```
+Use: `[breakdance_dynamic field='related_featured_image_url' relation_field='company_brand']`.
+⚠ Test it with `\Breakdance\DynamicData\renderDynamicShortcodes($str)` — **`do_shortcode()` does
+NOT resolve these**; Oxygen has its own parser, and a `do_shortcode` test returns the raw string and
+looks like the field failed to register.
+⚠ ACF returns an id, a `WP_Post`, or an array of either depending on `return_format`/`multiple` —
+accept all three in the handler.
+
+### ⚠ A bound alt that can be empty must go through `advanced.attributes`
+`content.image.custom_alt_when_from_url` bound to a relationship resolves to `''` whenever the
+relation is unset, and the renderer **omits an empty alt entirely** — shipping an alt-less `<img>`
+that fails any a11y audit. A literal attribute is always written, so put the binding there:
+```php
+'settings' => ['advanced' => ['attributes' => [[
+    'name' => 'alt', 'value' => "[breakdance_dynamic field='related_post_title' …]"]]]]
+```
+Empty then lands as `alt=""` (correct for the decorative fallback) and a real value still renders.
+The renderer resolves `[breakdance_dynamic` inside ANY string property, attributes included.
+Related: an Image bound to an empty URL does not render nothing — the placeholder layer swaps in an
+inline-SVG **data: URI**, so hide it with `img[src^="data:image"]{display:none}` rather than
+`img[src=""]`, which never matches.
+
+## Interactions (click / hover / scroll triggers → class, show/hide, …) — VERIFIED 2026-08-06
+The builder-editable alternative to a hand-rolled JS node. Lives on ANY element at
+`settings.interactions.interactions` (an array of rows), renders as a `data-interactions` JSON
+attribute, and the runtime (`breakdance-interactions@1`) is injected only on pages that use one.
+Click-toggles-a-class verified end-to-end in a real browser (off → on → off).
+
+```php
+$node['data']['properties']['settings']['interactions']['interactions'] = [[
+  'trigger' => 'click',                     // ROW target = where the LISTENER attaches;
+                                            // omit for "this element" (the common case)
+  'actions' => [[
+    'name'         => 'toggle_class',       // ACTION target = what the action AFFECTS
+    'css_class'    => 'is-open',
+    'target'       => 'custom',             // 'custom' | 'target' | omit = the triggering element
+    'css_selector' => '.my-panel',
+  ]],
+]];
+```
+⚠ **The two `target`/`css_selector` pairs are different things and swapping them fails silently** —
+a row-level `target:'custom'` attaches the listener to the *other* element, so nothing responds to
+the click. Resolver: `target==='custom'` → query `css_selector`, `'target'` → the trigger's element,
+anything else → the element itself.
+
+**Triggers** (`plugin/interactions/triggers/`): `click`, `mouse_enter`, `mouse_leave`,
+`mouse_leave_window`, `mouse_move_in_viewport`, `scroll_into_view`, `scroll_out_of_view`,
+`page_loaded`, `page_scrolled`, `key_down`, `key_up`, `form_submit`, `tab_change`, `slider_change`,
+`visibility_change`, `dropdown_menu_opens`, `mobile_menu_opens`.
+**Actions** (`plugin/interactions/actions/`, names read off the runtime's actionMap):
+`add_class`, `remove_class`, `toggle_class`, `show_element`, `hide_element`, `toggle_element`,
+`set_attribute`, `remove_attribute`, `toggle_attribute`, `set_variable`, `scroll_to`, `focus`,
+`blur`, `start_animation`, `control_popup`, `control_slider`, `javascript_function`
+(`js_function_name`, looked up on `window`).
+Per-action option keys come from each action's `controls()` (e.g. `css_class` for the class actions).
+`action.advanced.disable_at = ['phone_portrait', …]` skips the action at those breakpoints.
+The selector supports `{index}` / `{parent_index}` templating for loop contexts.
+**Prefer this over a JavaScriptCode node** for show/hide, tabs, toggles and reveals: the user can
+edit the whole behaviour in the builder panel, which a code node never allows (project rule 2).
+
+## Component Properties (per-instance overrides) — VERIFIED WORKING 2026-08-06
+**Supersedes the old "unusable, duplicate the block instead" note.** Two instances of one
+`oxygen_block` CAN render different content in Oxygen 6.1.0. It takes BOTH halves — the override is
+gated on the block declaring the property editable, which is why a targets-only attempt renders the
+base text on every instance and looks broken:
+
+**1. In the BLOCK's tree** — mark the property editable on the node that owns it:
+```php
+$node['data']['properties']['meta']['component']['editableProperties'] = [
+  ['propertyKey' => 'title', 'controlPath' => 'content.content.text',
+   'label' => 'Título', 'enabled' => true],   // enabled defaults TRUE when the key is absent
+];
+```
+**2. On each PLACED instance** — point a target at that node id and supply the value:
+```php
+oxy_el('OxygenElements\Component', ['content' => ['content' => ['block' => [
+  'componentId' => $blockId,
+  'targets'     => [['nodeId' => $nodeId, 'propertyKey' => 'title',
+                     'controlPath' => 'content.content.text']],
+  'properties'  => ['title' => 'INSTANCE ONE'],
+]]]])
+```
+`nodeId` is the id the WRITER assigned — read it back from the block's `_oxygen_data`
+(`$tree['root']['children'][N]['id']`) after `oxy_write_tree()`; it is not knowable in advance.
+`controlPath` is the same dot-path the design panel writes (`content.content.text`,
+`content.image.media`, …) and is applied with `assignArrayByPath`, so any depth works.
+Render path: `Component/ssr.php` → `ComponentInputValueHolder::setCurrentComponent()` →
+`breakdance_before_render_node` filter → `replaceNodePropertiesWithEditedPropertiesFromComponent`
+(`plugin/breakdance-oxygen/components.php`). The stack is push/pop, so nested components work.
+**What this retires:** page-specific duplicate components purely because one string differs.
+
+### Global Settings → Buttons — VERIFIED write-shape (round-trip + live build 2026-08-06)
+`settings.buttons.{primary,secondary}` styles EVERY `Button` element of that style site-wide
+(rung 1 — prefer this over per-class `custom_css` button generators when the design fits its keys).
+Consumed by `global-styles/buttons/global-buttons.css.twig` via the same `atomV1ButtonButton` macro
+the Button element uses; also `settings.buttons.button_presets.button_presets[]` (named presets).
+All keys below emission-verified in `global-settings.css` (values may be `var(--…)` or `color-mix(…)`
+strings — the macro emits them verbatim, so palette vars keep colours single-source):
+```php
+'settings' => ['buttons' => ['primary' => [
+  'background'       => 'var(--bde-color-accent)',   // → --bde-button-primary-background-color
+  'background_hover' => 'color-mix(in srgb, var(--bde-color-accent) 90%, #111)',
+  'typography'       => [
+    'color'      => '#111',        // flat — sets text-color AND text-color-hover (kills the
+                                   // engine's `#ffffff` hover default at the source)
+    // ⚠ everything ELSE is NOT flat: the atom macro hands this to the shared ELEMENT
+    // typography macro, so it nests like per-heading overrides (camelCase):
+    'typography' => ['custom' => ['customTypography' => [
+      'fontSize'   => ['number'=>0.875,'unit'=>'rem','style'=>'0.875rem'],
+      'fontWeight' => 900,
+      'advanced'   => ['letterSpacing' => ['number'=>0.08,'unit'=>'em','style'=>'0.08em'],
+                       'textTransform' => 'uppercase'],
+    ]]],
+  ],
+  // ⚠ padding only emits when size.size == 'custom', nested at size.padding.*
+  'size' => ['size' => 'custom', 'padding' => ['top'=>[…],'right'=>[…],'bottom'=>[…],'left'=>[…]]],
+  'corner_radius' => ['number'=>999,'unit'=>'px','style'=>'999px'],  // NOT `corners` (enum square|round)
+  // emitted UNCONDITIONALLY into --bde-transition-duration — set it or ship `: ;`
+  'effects' => ['transition_duration' => ['number'=>240,'unit'=>'ms','style'=>'240ms']],
+]]]
+```
+Per-node style pick: `design.button.style = 'primary'|'secondary'|'custom'|'text'` on the Button
+element (default primary) → renders `button-atom--<style>` (render-verified). Other macro-read keys,
+still unsampled: `color`/`color_hover` (outline mode), `outline`, `no_fill_on_hover`,
+`effects.{shadow,shadow_hover,scale_on_hover}`, `size.override_width`, `icon.*`. What stays custom
+CSS regardless: focus rings, inset edges, translateY lifts, reduced-motion opt-outs — no controls.
+⚠ Verify emission against WHITESPACE-NORMALISED CSS (`preg_replace('/\s+/','',$css)`) — the compiled
+file is minified, so needles containing `: ` silently miss. And don't use palette colours as
+sentinels; `--bde-color-*` swatch lines match them even when your write failed.
+
 ### Site-wide raw head/footer code
 `\Breakdance\Data\set_global_option('breakdance_settings_tracking_code_header', $rawHtml)` → verbatim
 into `<head>` on every page; `…_tracking_code_footer` → before `</body>`. Read back with
@@ -237,7 +390,66 @@ pages that use it (dependency-conditional; scripts are INLINED — don't grep fo
 (ease = plain GSAP string: linear, expo.in/out/inOut, power1-4.in/out/inOut, back.*, elastic.*, bounce.* —
 see entrance/constants.php EASING_TYPES). **The runtime DEEP-merges options over its defaults**
 (BreakdanceFrontend.utils.mergeObjects), so a partial `advanced` object is safe — distance/offset
-defaults survive. `once`/`disable_at`/`distance` remain write-unsampled — set those in the builder
+defaults survive. **`advanced.once` — VERIFIED (2026-08-06), and you almost always want it `true`:**
+`'advanced' => ['once' => true]`. The default is `once:false`, which REVERSES the entrance when the
+element scrolls back out (`goToBeginningOnReverse`) — sections re-hide and replay on every pass, and
+an at-rest render (top of page, exactly how a crawler or screenshot sees it) shows below-fold text
+at opacity 0. impeccable's detector flagged 53% of a page's text as content-hidden-at-rest from this
+alone. `disable_at`/`distance` remain write-unsampled — set those in the builder
 (source: `oxygen/plugin/animations/entrance/{control,attributes,dependencies}.php`).
 **Stagger pattern**: nearby siblings (columns/cards/bubbles) get the same `animation_type` with
 incremental delays (e.g. 0/120/240ms); reverse the index for a backward wave. Verified at scale.
+**Reduced motion is handled by the runtime** (read from `entrance/js/entrance.js` 2026-08-06): under
+`prefers-reduced-motion: reduce`, `init()` adds the completed class and returns — content is fully
+visible, nothing animates, no per-element opt-out needed. Also note `autoload()` waits for
+`imagesLoaded` before initing — an entrance on an above-the-fold hero delays its paint until images
+resolve, so keep entrances BELOW the fold and leave the LCP element unanimated.
+**Three more runtime facts that bite (verified on a live build 2026-08-06):**
+- `entrance.css` hides pending elements with an UNCONDITIONAL `[data-entrance]{visibility:hidden}`,
+  which **removes them from the accessibility tree** — a screen reader can't reach the content until
+  the visual viewport scrolls it in, and with JS off it never appears at all. Fix with a small
+  override (doubled attribute selector `[data-entrance][data-entrance]` = (0,2,0) beats the engine
+  regardless of print order): `{visibility:visible;opacity:0}` + `.is-animating,.is-animated{opacity:1}`
+  + a `<noscript>` `{opacity:1}` block. State classes: `is-animating`/`is-animated` (entrance.js:14-15).
+- The inline init is `new BreakdanceEntrance('%%SELECTOR%%', …)` and the class resolves it via
+  `document.querySelector` — **only the FIRST match animates**. An entrance on a loop-rendered
+  global-block card fires on instance 1 and leaves the rest hidden-then-static; put it on the loop's
+  WRAPPER instead.
+- When grepping rendered HTML for `data-entrance` values, remember types are camelCase (`slideUp`) —
+  a `[a-z]*` character class silently drops every slide/flip/zoom match.
+- **Ghost inits on Component-rendered nodes (engine artifact, 2026-08-06):** a node inside a placed
+  Component gets its `new BreakdanceEntrance('%%SELECTOR%%',…)` inline init emitted TWICE with
+  different instance suffixes (`.oxy-container-72-118-72-1` and `…-2`); only one exists in the DOM,
+  so the other's `init()` throws `Cannot set properties of null (setting 'bdAnim')` — one uncaught
+  TypeError per animated node, every page load. Reveals still work (each init is its own script),
+  but the console noise is real. Guard via mu-plugin: patch `BreakdanceEntrance.prototype.init` to
+  no-op when `document.querySelector(this.selector)` is null — and register the patch retrying at
+  DOMContentLoaded/load, because the class is defined by scripts that may print AFTER wp_footer
+  output (init only runs post-imagesLoaded, so the retry is always in time).
+- **Detectors/screenshots catch entrances mid-animation:** a contrast scan that screenshots during
+  the stagger reads transient opacity as low contrast ("opacity stack" findings). Judge contrast at
+  rest; with `advanced.once=true` the at-rest state after any scroll is the final one.
+
+## Custom element plugin — VERIFIED registration (live build, 2026-08-06)
+A real element in the builder's **+** panel (own category, own controls) — the packaging for
+interactive/data-driven widgets a Component can't parameterise (workflow step 0). One small plugin:
+```php
+add_action('plugins_loaded', function () {
+    \Breakdance\Elements\registerCategory('my-brand', 'My Brand');
+    \Breakdance\ElementStudio\registerSaveLocation(
+        \Breakdance\Util\getDirectoryPathRelativeToPluginFolder(__DIR__) . '/elements',
+        'MyBrand', 'element', 'My Brand', false, true /* excludeFromElementStudio */
+    );
+}, 5);
+```
+Three things that must be right or it SILENTLY never loads:
+- **Priority < 10.** Oxygen scans registered directories on `breakdance_loaded`, fired from
+  `plugins_loaded` at 10. Register later → no error, no element.
+- **The glob is `<dir>/*/*.php`** — one folder per element, nothing else in it; every file found is
+  `require`d except `*ssr.php`.
+- **`excludeFromElementStudio = true` for hand-written files** — opening the element in Element
+  Studio regenerates them (ssr.php included).
+Element design lives in its `default.css`, scoped `.breakdance .my-el*` = (0,2,0) — beats the theme
+and the engine's `.breakdance img{height:auto}`. A wrong element-class slug in a tree makes
+`oxy_write_tree` throw AND `wp eval-file` exit 255 with no message — run builds through a runner
+that catches `\Throwable`.

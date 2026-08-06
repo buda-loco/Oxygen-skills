@@ -736,6 +736,13 @@ Back up the DB first; do ONE class at a time, safest first. Three non-obvious go
    (`grep '\.name{' uploads/oxygen/css/oxy-selectors.css`); if absent, force it:
    `\Breakdance\BreakdanceOxygen\Selectors\saveSelectors(json_encode([...]))` again +
    `\Breakdance\Render\generateCacheForGlobalSettings()`.
+   **The mechanism, read from `selectors.php` (2026-08-06):** `saveSelectors` SKIPS regeneration
+   entirely when the incoming list equals the stored one, and regeneration reads through
+   `getOxySelectors()`, which is **statically memoised per process**. Two corollaries: (a) REMOVING a
+   selector then regenerating in the same process rebuilds the CSS from the stale memo — the deleted
+   rule survives; (b) a follow-up "resave the same list" is a no-op, not a fix. Deletion recipe:
+   filter the list → `saveSelectors` → then call `generateCacheForGlobalSettings()` in a FRESH
+   process. This is also the root cause of the two-saves-lose-the-second-batch trap.
 
 **Cascade-tie entanglement — why partial migrations regress.** The reference stylesheet leans on
 source-order tie-breaking between co-occurring same-specificity classes (`.post-body` overrides
