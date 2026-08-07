@@ -453,3 +453,145 @@ Element design lives in its `default.css`, scoped `.breakdance .my-el*` = (0,2,0
 and the engine's `.breakdance img{height:auto}`. A wrong element-class slug in a tree makes
 `oxy_write_tree` throw AND `wp eval-file` exit 255 with no message — run builds through a runner
 that catches `\Throwable`.
+
+## Template condition ruleGroups — VERIFIED 2026-08-07 (closes a coverage gap)
+Previously listed under "known coverage gaps". The shape, read off
+`themeless/request.php::doesRuleApply()` and confirmed live:
+
+```php
+oxy_template_settings($id, 'post-type-archive', 30, false, [[
+    ['ruleSlug' => 'post-type-archive', 'operand' => 'is', 'value' => ['zs_project']],
+]]);
+```
+
+- ⚠ The key is **`ruleSlug`** — NOT `conditionSlug`. The condition *registers* itself under
+  `slug`/`conditionSlug`, but the evaluator reads `$rule['ruleSlug']` and returns false for
+  anything else. Get this wrong and the rule group silently evaluates false, so the template
+  applies **nowhere** (or, with an empty `ruleGroups`, **everywhere**) — both fail quietly.
+- Nesting is **rule groups OR'd, rules within a group AND'd**
+  (`doesTemplateApply` → `in_array(true, …)`; `doesRuleGroupApply` → `!in_array(false, …)`).
+- `count($ruleGroups) < 1` returns **true** — an empty array means "applies whenever the type
+  callback is true", which for `post-type-archive` is *every* archive on the site.
+- Operands are the literal strings in `themeless/rules/constants.php`: `'is'`, `'is not'`,
+  `'is one of'`, `'is all of'`, `'is none of'`, `'is before'`, `'is after'`, …
+- Archive type slugs (`themeless/rules/archive/`): `post-type-archive`, `taxonomy-archive`,
+  `all-archives`, `post-archives`, `author-archive`, `date-archive`, plus the WC set.
+  Priorities in `constants.php`: catch-all 1, all-archive/all-single 10, specific 20.
+
+**Verify targeting, don't assume it.** After writing, curl the intended URL *and* a URL that
+should NOT match, and grep for a class only that template emits.
+
+---
+
+# Shapes verified on the Bold & Groovy build (2026-08-07, session 2)
+
+## `OxygenElements\TermLoopBuilder` — the term-side twin of PostsLoop
+
+Not previously shaped. Same `repeated_block` contract as `PostsLoop`; the query differs.
+
+```php
+oxy_el('OxygenElements\\TermLoopBuilder', ['content' => [
+    'query' => [
+        'load_terms_by_query' => true,      // ⚠ MUST be true or `term_query` is ignored
+        'hide_empty'          => false,
+        'term_query'          => "return ['taxonomy'=>'services','parent'=>0,…];",
+    ],
+    'repeated_block' => [
+        'global_block' => 1001,             // an oxygen_block ID
+        'tag'          => 'div',            // article | section | div
+        'advanced'     => ['when_empty' => 1002],
+    ],
+]]);
+```
+
+- With `load_terms_by_query` **unset**, the element falls back to the panel dropdowns
+  (`content.query.taxonomy`, `.limit`, `.hide_empty`) and **silently ignores the PHP**.
+- `term_query` returns `get_terms()` args (not `WP_Query` args).
+- Inside the repeated block, the Term dynamic fields resolve per term:
+  `term_name`, `term_id`, `term_description`, `term_permalink`, `term_count`,
+  `term_custom_field` (takes a `key` attribute).
+- ⚠ **Its wrapper class is `bde-term-loop`, not `bde-post-loop`.** Any `display:contents`
+  unwrap rule must list both or a term loop lands in one grid cell while a post loop behaves.
+
+## `OxygenElements\DynamicDataLoop` — CANNOT read a repeater on a term
+
+`ssr.php` resolves rows with `$postId = $isOption ? 'option' : get_the_ID()`. There is no term
+branch, so an ACF repeater stored on a **term** is unreachable by this element. Don't burn time
+shaping it for taxonomy work.
+
+**What to do instead:** ACF flattens repeater rows into ordinary meta
+(`process_0_title`, `process_0_description`, `process_1_title`, …), and on a term those are
+plain **termmeta**. So a fixed number of rows can be read with ordinary
+`term_custom_field` bindings, each row a real selectable node in the builder:
+
+```php
+byg_dyn_key_text('term_custom_field', "process_{$i}_title", 'h3', ['step__title']);
+```
+
+Cap the ACF repeater at the same number the design shows, and collapse unused rows with
+`.step:has(.step__title:empty){display:none}`.
+
+## `EssentialElements\SearchForm`
+
+```php
+oxy_el('EssentialElements\\SearchForm', [
+    'content'  => ['form' => ['placeholder' => 'Search…']],
+    'design'   => ['form' => [
+        'style'          => 'classic',      // 'classic' | 'full-screen' (DEFAULT is full-screen)
+        'classic_styles' => ['icon_button' => ['type' => 'text', 'text' => 'Search']],
+    ]],
+    'settings' => ['advanced' => ['classes' => ['sr-form']]],
+]);
+```
+
+`classic` renders a real `<form role="search" method="get">` with a labelled input
+(`.search-form__field`, `name="s"`) and a submit `<button>` — accessible without hand-written
+markup. Rendered classes to brand: `.search-form__container`, `.search-form__field`,
+`.search-form__button`.
+
+⚠ **The template hardcodes `value=""`**, so the field cannot echo the current query. Nothing in
+the panel changes that; prefill it from `?s=` in JS.
+
+## Template types and conditions used for taxonomy + search
+
+**`taxonomy-archive`** — the `taxonomy` condition's `value` entries are **JSON-encoded
+strings**, not slugs:
+
+```php
+// one specific term
+json_encode(['taxonomySlug' => 'services', 'termId' => 12])
+// every term in the taxonomy
+json_encode(['allInTax' => 'services'])
+```
+
+- Operands are only `is` / `is not` (`rules/archive/taxonomy.php`).
+- ⚠ **`is not` with SEVERAL values is useless.** The callback `array_map`s over the values and
+  returns `in_array(true, $results)` — so "is not Design **or** is not Video" is true on every
+  term, including Design. To serve a subset differently, use **two templates separated by
+  priority**, not a negation: the narrow one at a higher priority, the broad one below.
+
+**`search`** — needs **no** rule groups; the type's own callback is `isSearch()`.
+
+```php
+oxy_template_settings($id, 'search', 30, false, []);
+```
+
+## Binding a value a class cannot carry — the `data-*` pattern
+
+`settings.advanced.classes` is a **static array**; there is no way to bind a class name to a
+dynamic field. An **attribute** can be bound, and the renderer resolves `[breakdance_dynamic …]`
+inside any string property:
+
+```php
+$node['data']['properties']['settings']['advanced']['attributes'] = [
+    ['name' => 'data-band', 'value' => oxy_dyn('byg_term_band')],
+];
+```
+
+Then key the CSS off the attribute (`.card[data-band="c2"]{--band-1:…}`). This is how a loop
+gives each item a **different** design variant — `:nth-child()` also works but hardcodes
+position, whereas a bound attribute survives reordering and new terms.
+
+⚠ **`oxy_link()` takes four parameters and has no attributes argument.** PHP silently ignores
+extra arguments to a userland function, so passing attributes as a fifth sets **nothing**, with
+no error. Build the node, then write the attribute onto it.

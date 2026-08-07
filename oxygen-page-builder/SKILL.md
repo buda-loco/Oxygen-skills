@@ -22,16 +22,28 @@ render on the front-end yet fail to open in the builder. Never guess shapes — 
    ink `#1f2937`, Oswald uppercase headings), scoped per GOTCHAS.md rules, in
    the global stylesheet (a CssCode node in your HEADER template → `post-<id>.css`; header, not footer — see GOTCHAS §bde-div cascade) or a page-local
    CssCode node.
-2. **Native, individually-editable elements over code elements.** The goal is USER-EDITABILITY:
-   every content piece must be a component the user can click and change in the builder — one
-   `Text`(hN) per heading, one `RichText` per paragraph/list, `Image`/`Button`/`FAQ`/… per piece.
+2. **Builder-editability is NON-NEGOTIABLE.** Every piece of a page must be selectable and
+   editable in the Oxygen visual editor. Not "preferably" — this is the acceptance bar, and a
+   template that renders perfectly but cannot be edited in the builder is **not done**.
    **Litmus test: can the user select and edit this exact piece in the builder?**
-   - ⛔ `EssentialElements\PostContent` (un-editable dynamic mirror — explicitly rejected here),
-     one giant RichText blob, or a PhpCode echoing `the_content` all FAIL the test.
-   - PhpCode/HtmlCode are last resorts for genuinely data-shaped output (product loops, meta-driven
-     tables, dynamic menus) — keep them small leaf renderers and say why no native element fit.
-   - Check ELEMENTS.md first: 165 native elements (WC set, MenuBuilder, AdvancedTabs, FormBuilder,
-     Advancedslider, FAQ…).
+   - One `Text`(hN) per heading, one `RichText` per paragraph, `Image`/`Button`/`FAQ`/… per piece.
+   - ⛔ `EssentialElements\PostContent`, one giant RichText blob, or a PhpCode echoing
+     `the_content` all FAIL the test.
+   - **⚠ The old "PhpCode is a last resort for data-shaped output" wording was an escape hatch,
+     and it got taken constantly** — a whole site was once built as PhpCode nav + PhpCode footer
+     + PhpCode templates, each individually justified as "dynamic menus" or "a small leaf
+     renderer", none of it editable. Justifying the exception one node at a time is how you end
+     up with zero editable nodes. Assume there IS a native element and go find it.
+   - Check ELEMENTS.md FIRST: 165 native elements. Menus → `MenuBuilder` +
+     `MenuCustomDropdown`/`MenuCustomArea` (this is Oxygen's mega-menu primitive, and it takes
+     arbitrary child elements — images, loops, anything). Lists → `PostsLoop`. Repeating
+     structures → a `Component` (`oxygen_block`) with Component Properties.
+   - If the native shape is **undocumented**, that is a reason to golden-sample it (build once
+     in the real builder, read `_oxygen_data` back) and add it to PROPERTIES.md — NOT a reason
+     to fall back to PhpCode. Extending this skill is cheaper than shipping dead weight.
+   - Genuine remaining exceptions: a `CssCode` node holding the global stylesheet, and a small
+     `JavaScriptCode` node for behaviour no native Interaction covers. Both are infrastructure,
+     not content.
 3. **Post/term LISTS → prefer the native loop builder (`OxygenElements\PostsLoop`), not a PhpCode loop**
    — so the user can edit query + card design in the visual editor. This overrides the "PhpCode for
    loops" fallback for POST LISTS specifically (blog archive, related posts, etc.).
@@ -148,7 +160,17 @@ when true you must call `oxy_regen_selector_css()` **from a fresh process** (GOT
    - `scripts/wp-eval.sh scripts/validate-tree.php <id> fetch` (io-ts invariants + trap checks + front-end 200)
    - open `http://example.local?oxygen=builder&id=<id>` — must load with no "IO-TS decoding failed"
    - CSS: check `element.matches(sel)` in the browser console — NEVER trust "the rule is in the file"
-     (see GOTCHAS.md §dead WC selector).
+     (see GOTCHAS.md §dead WC selector). For an override, read the exact property back with
+     `getComputedStyle()` — a rule can be in the compiled file and still lose the cascade
+     (GOTCHAS §not-contributes-specificity).
+   - **After any script that writes a tree or a stylesheet, re-read it FROM THE DATABASE** and
+     assert what you expect is present. A write script's success message usually comes from a
+     flag, not from the write (GOTCHAS §php-null-coalesce-breaks-references) — three scripts in
+     one session reported success while writing nothing, and every check below stayed green.
+   - **A green audit is not a rendered page.** io-ts, panel lint and the a11y/SEO sweep say
+     nothing about layout: they all passed while the site rendered unstyled. Open a browser,
+     and measure at 390 / 1280 / 1600 (GOTCHAS §container-padding-inside-the-cap,
+     §min-height-plus-aspect-ratio-is-a-min-width).
    - **a11y + SEO (rule 6):** run the front-end audit snippet in SEO.md §a11y-seo-audit — 0 alt-less
      imgs, 0 span-buttons, exactly 1 H1, and title/description/OG/canonical/lang all present.
    - **panel-expressibility:** `scripts/wp-eval.sh scripts/examples/lint-panel-css.php` — every
@@ -281,9 +303,15 @@ small, auditable, and idempotent.
 The original build didn't exercise these, so no verified write-shapes exist here. They're real Oxygen 6
 features — for each, use the golden-sample workflow (build once in the real builder → read
 `_oxygen_data`/options back) before writing programmatically, and consult the official docs topic:
-- **Element display conditions & template condition arrays** (AND/OR rules; custom PHP conditions) —
-  official docs: *Dynamic Data → Conditions*, *Templating → Conditions / Applying Templates*. This
-  skill only uses template `type` + `priority`.
+- ~~**Template condition arrays**~~ — **NOW SHAPED (2026-08-07):** `ruleSlug` + operand strings,
+  OR across groups / AND within a group. See PROPERTIES §Template condition ruleGroups. Still
+  unshaped: *element display* conditions and custom PHP conditions.
+- ~~**`MenuBuilder` + `MenuCustomDropdown` / `MenuCustomArea`**~~ — **NOW COVERED (2026-08-07).**
+  Native menu / mega-menu primitives; `MenuCustomArea` takes arbitrary children, so image-led
+  panels are native, not code. A PhpCode nav is NOT an acceptable substitute. Read
+  GOTCHAS §dropdown-paint-the-body (what to paint, what never to touch) and
+  §mega-menu-floater-anchoring (the floater is anchored to its TRIGGER and overflows the
+  viewport on right-hand items — measured 606px; plus the hover grace period).
 - ~~**Components / Global Blocks**~~ — **NOW FULLY SHAPED (2026-08-06).** A reusable Component IS an
   `oxygen_block` post with a normal `_oxygen_data` tree (RECIPES §Reusable Global Block), AND
   **Component Properties per-instance overrides WORK** in 6.1.0 — the old "hook never called,
@@ -303,6 +331,12 @@ features — for each, use the golden-sample workflow (build once in the real bu
   PROPERTIES §Dynamic data binding), and now the **ACF options-page + image-repeater loop**
   rendered via PhpCode (RECIPES §ACF logo-cloud component) are verified. Still unshaped: image/gallery
   bindings on the native *Image* element, relationship queries — golden-sample when first needed.
+  ⚠ Read top-level ACF fields by **KEY**, never by name — GOTCHAS §acf-read-top-level-fields-by-key.
+- ~~**Term loops / taxonomy templates / search**~~ — **NOW SHAPED (2026-08-07).**
+  `OxygenElements\TermLoopBuilder`, the `taxonomy-archive` + `search` template conditions, and
+  `EssentialElements\SearchForm`: PROPERTIES §Shapes verified on the Bold & Groovy build.
+  ⚠ `OxygenElements\DynamicDataLoop` resolves rows against `get_the_ID()` and therefore
+  **cannot** read a repeater stored on a term.
 - **Form hooks** — `breakdance_form_validate_field` filter + the developer Form Actions API, beyond
   the FormBuilder shapes in RECIPES. Official docs: *Forms → Hooks & Actions API*.
 

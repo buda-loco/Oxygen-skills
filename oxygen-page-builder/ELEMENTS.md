@@ -41,7 +41,7 @@ Below: `▸` = composite (has `defaultChildren`). `slug` is what goes in `node.d
 - **Account/orders**: Account Page `EssentialElements\Woopageaccount` · Order Tracking Page `EssentialElements\Woopageordertracking`
 
 ## Dynamic / post (category `dynamic`)
-- Post Loop Builder `OxygenElements\PostsLoop` · Repeater Field `OxygenElements\DynamicDataLoop` · Term Loop Builder `OxygenElements\TermLoopBuilder` · Template Content Area `OxygenElements\TemplateContentArea` · Widget `OxygenElements\WpWidget`
+- Post Loop Builder `OxygenElements\PostsLoop` · Repeater Field `OxygenElements\DynamicDataLoop` **(post/option only — cannot read a TERM repeater)** · Term Loop Builder `OxygenElements\TermLoopBuilder` **(shaped — PROPERTIES; wrapper class is `bde-term-loop`)** · Template Content Area `OxygenElements\TemplateContentArea` · Widget `OxygenElements\WpWidget`
 - Post fields: Post Title/Content/Excerpt/Meta `EssentialElements\{PostTitle,PostContent,PostExcerpt,PostMeta}` · Archive Title `EssentialElements\ArchiveTitle` · Author `EssentialElements\Author` · Post List `EssentialElements\Postslist` · Breadcrumbs `EssentialElements\Breadcrumbs` · Adjacent Posts `EssentialElements\AdjacentPosts` · Comments `EssentialElements\{CommentForm,CommentsList}`
 
 ## Menu / header (for header/footer templates)

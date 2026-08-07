@@ -926,3 +926,418 @@ reduced-motion / a JS failure always leave content visible
 (old browsers keep `hidden` and typically use a JS fallback computing against the viewport,
 which is immune). Beware page-local CSS re-declaring the section's `overflow:hidden` AFTER the
 global fix — the page rule wins and re-freezes it.
+
+---
+
+# Findings from the Bold & Groovy build (2026-08-07)
+
+A full port of an approved Penpot design system into Oxygen 6: tokens, cards, nav/footer,
+a single template and an archive template. Everything below was hit live and verified.
+
+## §template-settings-double-encode — a template that silently never applies
+`_oxygen_template_settings` is **double-encoded**. `oxy_template_settings()` writes it through
+`\Breakdance\Data\set_meta()`, which JSON-encodes AGAIN, so the stored value is
+`"{\"type\":\"everywhere\",...}"` — a JSON *string* containing the JSON object.
+
+Writing it yourself with `update_post_meta($id, '_oxygen_template_settings', wp_json_encode($s))`
+stores `{"type":...}` — single-encoded, structurally plausible, and **the template never
+applies**. No error, no warning; the template is simply ignored and the page renders without it.
+Symptom: your header/footer/template CSS never loads on the front end.
+
+**Always use `oxy_template_settings()`.** Verified against three separate installs, all of which
+store the double-encoded form.
+
+## §oxygen-data-is-nested-json — reading a tree back
+`_oxygen_data` is **not** the tree. It is `{"tree_json_string": "<json>"}` — the tree is a
+STRING inside it, so reading a node back takes two decodes:
+```php
+$meta = json_decode(get_post_meta($id, '_oxygen_data', true), true);
+$tree = json_decode($meta['tree_json_string'], true);
+$css  = $tree['root']['children'][0]['data']['properties']['content']['content']['css_code'];
+```
+One decode yields the wrapper and `['root']` is missing. Guard the read and throw — a blind
+`?? null` here silently rebuilds a header with an empty stylesheet.
+
+## §button-wrapper-underline — text-decoration cannot be removed by a child
+`oxy_button` renders `<div class="btn bde-button"><a class="bde-button__button">`; the
+hand-written form is `<a class="btn bde-button"><span>`. Either way **the wrapper can be the
+anchor**, so it carries the browser's default underline — and `text-decoration` is painted by
+the ancestor and **cannot be removed by a descendant**. `text-decoration:none` on
+`.bde-button__button` looks correct in the CSS and does nothing; every box button renders as a
+filled box PLUS an underlined label.
+
+Put it on the wrapper: `.btn.bde-button{text-decoration:none}`. A variant whose rule IS the
+design (a tertiary text link) should draw it with `box-shadow: inset 0 -1px 0`, which is
+unaffected.
+
+## §focus-ring-per-ground — dark surfaces must redeclare --focus-ring
+A single zero-specificity floor is the right shape:
+```css
+:where(a[href],button,input,select,textarea,summary,[tabindex]):focus-visible{
+  outline:var(--rule-thin) solid var(--focus-ring,var(--focus-on-paper));outline-offset:2px;}
+```
+⚠ But **every dark surface must set `--focus-ring` itself**. Ground classes (`.ground-ink`) set
+it; nav / footer / CTA / card bands carry their OWN class names, so without an explicit
+declaration they fall through to the light-ground default. Measured: accent-brown on near-black
+came out at **2.3:1**, under the 3:1 that WCAG 1.4.11 requires of a focus indicator — an
+invisible focus ring that every automated check passes.
+
+## §focus-visible-needs-real-keyboard — `.focus()` is not a test
+`element.focus()` does **not** reliably match `:focus-visible` — the browser only applies it
+when the last interaction was keyboard. An audit loop that focuses each element and reads
+`outlineStyle` reports "no focus indicator" for elements that are perfectly styled.
+
+Verify with real keyboard input (CDP `Input.dispatchKeyEvent` / a Tab keypress), then read
+`document.activeElement` and its computed outline. That test also caught the opposite: elements
+that DID match `:focus-visible` but were showing Chrome's default blue ring rather than a brand
+one — which the synthetic probe had scored as a pass.
+
+## §svg-naturalwidth-zero — not proof of a broken image
+An SVG with only a `viewBox` and no intrinsic size reports `naturalWidth === 0` while rendering
+perfectly. An audit that flags `naturalWidth === 0` as "broken image" will report a wall of
+false positives on any SVG-heavy page. Verify with an actual HTTP status (`fetch(src)`) and a
+non-zero rendered height instead. Related: §svg-height-auto.
+
+## §acf-flexible-needs-field-keys — sub-values silently dropped
+Writing ACF **Flexible Content** with `update_field()` must use field **KEYS**, not names:
+```php
+update_field('field_zs_modules', [[
+  'acf_fc_layout'            => 'branding',
+  'field_zs_branding_title'  => 'Branding',
+  'field_zs_branding_images' => [12, 13, 14],
+]], $postId);
+```
+With names, ACF cannot resolve sub-fields inside a layout: **the rows save, every sub-value is
+dropped, and nothing errors.** You get the right number of layouts, all empty. Any index built
+from those values (pools, relationship caches) then indexes nothing while reporting success.
+
+Also: `update_field()` does **not** fire `acf/save_post`, so plugins that rebuild derived data
+on save do not run. Call their reindex function explicitly after a scripted write.
+
+## §namespaced-helper-plugins — function_exists on a bare name
+Sibling plugins are often namespaced. `function_exists('ep_attachment')` is **false** when the
+function is `\ElegantPlaceholders\ep_attachment`. If your guard falls back to a default (`0`,
+`''`) rather than throwing, you write a whole content set full of zeros and every step reports
+success. Guard on the **fully-qualified** name and **throw** rather than degrade.
+
+## §oembed-needs-a-fallback
+`wp_oembed_get()` returns empty when the provider is unreachable, rate-limited, or the URL is
+unsupported — common on local installs. An unguarded video block then renders as an empty
+coloured box. Always fall back to the poster image as a link out.
+
+## §mega-panel-100vw — dropdowns and the scrollbar
+A full-bleed mega panel written as `position:absolute; left:50%; width:100vw;
+transform:translateX(-50%)` adds a **horizontal scrollbar on every page**: `100vw` includes the
+scrollbar width. Anchor to the nav instead — `.nav{position:relative}`, `.nav__item{position:
+static}`, `.nav__panel{position:absolute;left:0;right:0}` — which spans the bar with no
+overflow and no magic numbers.
+
+## §penpot-generatemarkup-duplicates — when porting artwork
+(Penpot-side, but it bites any design port.) `penpot.generateMarkup()` emits each shape once
+per render layer — fills, strokes, shadows. A naive path extraction produced **53 paths for 14
+shapes** and a 26KB logo, four copies of every glyph stacked on top of each other. Dedupe by
+path data: 26KB → 6KB.
+
+Also: **Penpot ignores `lineHeight` at render.** The values stored in its typographies were
+never seen by anyone. Porting them literally produced display type whose line box was shorter
+than the cap height, so consecutive lines collided. Measure the real artwork (the y-delta
+between stacked text shapes ÷ font size) rather than trusting stored metadata.
+
+## §heredoc-delimiter-in-css — a CSS comment can terminate your heredoc
+Build scripts hold big stylesheets in a nowdoc (`<<<'CSS' … CSS;`). PHP 7.3+ ends a heredoc at
+the first line whose **first non-whitespace token is the delimiter**, followed by any
+non-alphanumeric character — a space counts.
+
+So a comment line inside the stylesheet like:
+```
+   CSS min-width did take but overflowed the viewport…
+```
+silently **closes the heredoc 117 lines early**. The error is reported at the heredoc's OPENING
+line and reads `Invalid body indentation level (expecting an indentation level of at least 3)`,
+which points nowhere near the real cause and looks like an indentation problem.
+
+Find it with `grep -n "^[[:space:]]*CSS" file.php` — any hit other than the real closing marker
+is the culprit. Reword the comment, or pick a delimiter that cannot start an English sentence
+(`BYG_CSS`, `STYLESHEET_EOF`). `php -l` catches it; run it on every build script before wp-eval,
+because via `wp eval-file` this surfaces only as "There has been a critical error on this website".
+
+## §oxygen-own-classes-win — four verified cases (2026-08-07)
+Oxygen's own element classes repeatedly beat hand-written CSS at EQUAL specificity, winning on
+source order. Each of these presented as a design bug, not a cascade bug.
+
+1. **`.oxy-container{position:relative}`** beats `.your-class{position:absolute}` (both 0,1,0).
+   Symptom: an absolutely-positioned child renders in flow — a bottom-anchored caption appears
+   at the TOP of its card. Fix: two-class selector `.card .card__caption` (0,2,0).
+2. **The Global Settings button atom sets a colour on `.bde-button__button`**, which beats
+   inheritance. Anything inside a `Button` styled with `color:inherit` or `currentColor` silently
+   takes the atom's colour instead of its container's. Symptom: near-white links on a cream
+   panel; hairline borders written as `currentColor` vanishing. **Rule: inside a Button element,
+   colour must always be EXPLICIT.**
+3. **`.breakdance-dropdown-custom-content` is `display:flex` with 30px padding.** A grid placed
+   inside sizes to content, not to the panel, and colour fields stop short of the edges.
+4. **`.breakdance-menu-link` etc. carry their own typography** — brand the RENDERED classes
+   (`nav.breakdance-menu > ul.breakdance-menu-list > li.breakdance-menu-item > a.breakdance-menu-link`),
+   not your own wrapper class.
+
+## §dropdown-paint-the-body — never restyle a dropdown's layout
+`MenuCustomDropdown` renders:
+```
+.breakdance-dropdown--custom      ← wrapper: trigger + floater. NOT a surface.
+  .breakdance-dropdown-toggle     ← the trigger button
+  .breakdance-dropdown-floater    ← Breakdance positions this. NEVER touch.
+    .breakdance-dropdown-body     ← the panel surface. Paint THIS.
+```
+Painting the **wrapper** puts the panel background behind the trigger, so every menu item renders
+as a coloured block. Overriding the **floater's** `position/left/top` takes show-hide away from
+Breakdance and leaves every panel permanently open and stacked in the bar. Both observed live.
+
+Panel width is a MenuBuilder property, not CSS:
+`design.desktop_menu.dropdowns.wrapper.placement` = `left|center|right|full-width|section-width`.
+`content.content.custom_width` is read by the floater's JS and did not take. A CSS `min-width`
+does take but overflows the viewport on right-hand items, because the floater is anchored to its
+trigger. Use the native property.
+
+## §nth-of-type-inside-a-loop — never fires
+A `PostsLoop` wraps every card alone inside its own `article.bde-loop-item`, so a card is always
+`:nth-of-type(1)` and a cycle like `.card:nth-of-type(3n+2)` never matches. Count on the loop
+item instead: `.bde-loop-item:nth-of-type(3n+2) .card{…}`.
+
+## §image-element-has-no-loading-prop
+`OxygenElements\Image` emits `loading="lazy"` from a BOOLEAN at **`content.image.lazy_load`**
+(`{% if content.image.lazy_load %}`). There is no `loading` property — setting
+`content.content.loading = 'eager'` writes a key nothing reads, and the image stays lazy. For an
+above-the-fold logo set `lazy_load => false` plus a literal `fetchpriority` attribute.
+
+## §stringdata-has-no-constructor — a registered field that silently returns nothing
+`\Breakdance\DynamicData\StringData` has **no constructor**. `new StringData($value)` compiles,
+runs, and discards the value: every dynamic field resolves to an empty string, with no error
+anywhere and the shortcode correctly consumed (so it looks like a context bug, not an API bug).
+Use the factory:
+```php
+return \Breakdance\DynamicData\StringData::fromString($string);
+```
+The value lives on a public `value` property; `StringField` declares exactly four abstract
+methods — `handler`, `label`, `category`, `slug`. Reflect on the class before writing a handler.
+
+⚠ Also: do not name a namespaced helper `current()` — it collides with the PHP built-in, the
+same trap WordPress plugins hit with `register_taxonomy()`.
+
+## §acf-repeater-is-editable-via-registered-fields
+Oxygen dynamic data resolves **per post**; an ACF Flexible Content row is finer-grained, so a
+global block rendered in a loop cannot know which row it is showing. To keep a repeater's design
+builder-editable: hold the current row in a context, expose it as **registered dynamic fields**,
+give each layout its own `oxygen_block`, and render with `\Breakdance\Render\render($blockId)`.
+Only the `foreach` and a media leaf stay code — a gallery of N images cannot be a fixed set of
+builder slots. Working implementation: `mu-plugins/byg-module-fields.php` on boldandgroovy.
+
+# Findings from the Bold & Groovy build (2026-08-07, session 2)
+
+Six more templates and a fidelity pass over the whole site. The theme running through most of
+these: **a build script reported success while writing nothing, and every automated check
+stayed green.**
+
+## §php-null-coalesce-breaks-references — the one that hid for hours
+A recursive tree walk that mutates nodes MUST NOT use `??` in the `foreach`:
+
+```php
+foreach ($node['children'] ?? [] as &$child) { $walk($child); }   // ⛔ mutations discarded
+```
+
+`??` evaluates to a **temporary copy** of the array, so `&$child` binds to the copy's elements
+and every edit is thrown away. Correct:
+
+```php
+if (isset($node['children']) && is_array($node['children'])) {
+    foreach ($node['children'] as &$child) { $walk($child); }
+    unset($child);
+}
+```
+
+**Why it is so dangerous:** the "wrote it" message usually comes from a `$done`/`$found` flag
+captured by reference in the closure, which propagates perfectly — so the script is cheerfully
+truthful about having done nothing. Three scripts hit this in one session; the site ran
+unstyled for hours because the templates still rendered, still passed `validate-tree.php`,
+still passed the panel lint, and still passed the whole a11y/SEO sweep. **Nothing automated
+checks that a grid is a grid.**
+
+Two rules out of it:
+1. **Read the value back out of the database**, not out of the variable you just wrote. End
+   every write script with a re-read that prints present/missing per selector.
+2. **A green audit is not a rendered page.** Open a browser and read computed styles.
+
+## §node-id-collision-on-append — `Tree invalid, NOT written`
+`oxy_el()` starts its node-id counter from scratch, so appending to an **existing** page's tree
+produces ids that collide with what is already there and `oxy_write_tree()` rejects the whole
+tree (it refuses rather than corrupting — good, but the message points nowhere).
+
+```php
+oxy_nid(oxy_max_id_r($tree['root']));   // BEFORE building any new node
+```
+
+## §match-the-source-not-the-compiled-css
+String-replacing inside a CssCode node must match the **source**, not
+`uploads/oxygen/css/post-<id>.css`. The compiled file strips trailing semicolons and
+indentation, so `min-height:108px}` never matches the `min-height:108px;}` actually stored.
+The replacement silently no-ops. Read the node and `var_export()` the line before writing the
+matcher.
+
+## §unbalanced-css-comment-eats-the-rules
+Editing prose into an existing `/* … */` block can leave an **orphaned `*/`** mid-comment.
+Everything after it parses as garbage and **the rules that follow never reach the stylesheet** —
+while the build script still reports success, because it only checks that the marked block was
+written, not that its contents are valid CSS.
+
+Symptom: the rule is present in the source node and absent from the compiled file. Diagnose by
+counting delimiters in the block:
+
+```php
+$block.count('/*') === $block.count('*/')
+```
+
+Worth doing whenever a rule mysteriously does not apply. (Distinct from
+§heredoc-delimiter-in-css, which truncates the PHP string itself.)
+
+## §mu-plugin-load-order-and-lazy-classes
+Two separate traps when factoring shared code out of `byg-*` mu-plugins:
+
+1. **mu-plugins load in filename order.** A registrar that callers invoke *at include time*
+   must sort first — `byg-dynamic-fields.php` sorts AFTER `byg-client-fields.php` and every
+   request died with `Call to undefined function`. Name it `byg-0-dynamic-fields.php`.
+2. **A class extending a PLUGIN class cannot be declared at mu-plugin file scope.** Oxygen is a
+   regular plugin, so `\Breakdance\DynamicData\StringField` does not exist yet. A top-level
+   `class X extends StringField` is a fatal, and guarding it with `class_exists` is worse — it
+   is silently skipped and every field goes missing with no error. Declare it **inside** the
+   `wp_loaded` callback (an anonymous class is fine).
+
+## §not-contributes-specificity — Breakdance rules are (0,3,0)
+`:not()` contributes **its argument's** specificity. Breakdance ships:
+
+```css
+.breakdance-menu--anim-fade:not(.breakdance-menu--dropdown-slide) .breakdance-dropdown-floater{…}
+```
+
+which is **(0,3,0)**, not (0,2,0). A two-class override loses to it no matter that
+`post-865.css` loads later. Measured: a hover grace period written as
+`.nav__item .breakdance-dropdown-floater{transition:…}` never applied — the computed transition
+stayed at Breakdance's. **Four classes win.**
+
+What made it deceptive: *other* rules in the same block (width, position) **did** apply, because
+their competitors were weaker. The file looked like it was working. Verify with
+`getComputedStyle()` on the exact property, not by eye.
+
+Related and worth knowing: the header's CssCode nodes have an order (`byg-tokens`,
+`byg-components`, `byg-chrome`). At equal specificity **the last one wins** — an override
+written into an earlier node loses to the original in a later one.
+
+## §min-height-plus-aspect-ratio-is-a-min-width
+```css
+.work-card{aspect-ratio:825/537; min-height:280px;}
+```
+Together these impose a **minimum WIDTH** of 280 × 1.536 = **430px**. Below a 430px column the
+element refuses to shrink and pushes the document sideways — a horizontal scrollbar at 390px on
+every page carrying one.
+
+⚠ `min-width:0` — the usual grid-item remedy — does **nothing** here. The constraint is
+arithmetic, not min-content. Release the ratio at the breakpoint:
+`@media (max-width:639px){.work-card{aspect-ratio:auto;min-height:0}}`.
+
+(Separately, grid items *do* default to `min-width:auto`; that is a real and different cause of
+the same symptom.)
+
+## §container-padding-inside-the-cap
+```css
+.container{max-width:1200px; padding-inline:120px}   /* content = 960, not 1200 */
+```
+The padding sits **inside** the max-width, so a design whose artboard is 1440 with content from
+x120 to x1320 comes out **240px narrow site-wide** — every grid, every column. Symptom: a
+4-column footer measuring 222px tracks where the board says 282.
+
+```css
+.container{max-width:calc(var(--w-full) + 2 * var(--container-pad));padding-inline:var(--container-pad)}
+```
+
+Catch it by measuring the CONTENT box (`width − paddingLeft − paddingRight`) against the board,
+not the element width.
+
+## §button-base-class-carries-the-layout
+`oxy_button` renders `<div class="btn bde-button"><a class="bde-button__button">`. On a site
+where `.btn.bde-button` carries the LAYOUT (`display:flex`, hug-content) and `.btn--primary`
+only carries the paint, writing `['btn--primary']` **without the base class** leaves the wrapper
+at `display:block`. It stretches to the container and gets painted, while the actual anchor
+stays its natural width.
+
+**Only the anchor is clickable** — measured 17–29% of the visible button on three homepage CTAs.
+Always pass the base class: `['btn', 'btn--primary']`. Audit with
+`anchorWidth / wrapperWidth` per `.bde-button`.
+
+## §full-bleed-rule-use-markup-not-100vw
+A divider that must run edge-to-edge inside a centred `.container` is best done as a **full-width
+sibling div**, not a pseudo-element at `left:50%;transform:translateX(-50%);width:100vw`.
+`100vw` includes the scrollbar (measured 1728 against a 1713 viewport) and overhangs the right
+edge — and `overflow-x:clip` on the ancestor did **not** contain it. A plain div needs no
+viewport units and cannot overflow. See also §mega-panel-100vw.
+
+## §mega-menu-floater-anchoring — refines §dropdown-paint-the-body
+That entry says never to touch the floater's `position/left/top`. Refined by measurement:
+
+**Show/hide is `opacity`+`visibility`, not position** — so changing where the floater is
+*anchored* does NOT break Breakdance's open/close. What breaks it is removing the transition
+or the visibility handling.
+
+The defect worth fixing: the floater is `position:absolute` inside its own
+`.breakdance-dropdown` (relative), so it is **left-anchored to a 66–87px trigger** while being
+~1160px wide. Every panel overflowed the viewport — measured 288 / 399 / 500 / **606** px —
+putting a whole column off-screen and adding a horizontal scrollbar whenever a menu opened.
+
+```css
+@media (min-width:1024px){
+  .nav{position:relative;}
+  .nav__item .breakdance-dropdown{position:static;}          /* release the per-trigger anchor */
+  .nav__item .breakdance-dropdown-floater{
+    top:100%;left:auto;right:0;                              /* grow leftward into space that exists */
+    width:min(760px, calc(100vw - 2 * var(--container-pad)));
+  }
+}
+```
+
+**Hover robustness follows from the geometry.** Once the panel horizontally covers every
+trigger and the vertical gap is 0, there is no direction you can leave a trigger downward and
+miss it. Add on top:
+
+```css
+/* grace period on the HIDE direction only; four classes — see §not-contributes-specificity */
+.nav .breakdance-menu .nav__item .breakdance-dropdown-floater{
+  transition:opacity 160ms ease 180ms, visibility 0s linear 340ms;}
+.nav .breakdance-menu .nav__item:hover .breakdance-dropdown-floater{
+  transition:opacity 160ms ease 0s, visibility 0s linear 0s; pointer-events:auto;}
+.nav__item:hover::after{content:"";position:absolute;left:0;right:0;top:100%;height:16px;}
+```
+
+`pointer-events:auto` while fading is what lets re-entry during the grace window cancel the
+close; without it the fading panel is inert and the pointer falls through.
+
+⚠ **Synthetic mouse events do not trigger `:hover`.** Test with real pointer input (CDP), and
+note that a teleporting hover never exercises the diagonal path that actually breaks menus —
+reason about the geometry as well.
+
+## §acf-read-top-level-fields-by-key
+`get_field('blurb', "term_{$id}")` returned the **client** post-type group's wysiwyg — the value
+came back `<p>`-wrapped, from a different field entirely. ACF resolves an unqualified **name**
+against every registered group and the first match wins, regardless of which object the
+`$post_id` refers to; it then applies *that* field's type formatting.
+
+Read top-level fields by **KEY** (`get_field('field_zs_service_tagline', …)`). Shared names are
+only safe for module SUB-fields, which are read through their parent. Give term fields distinct
+names too, so a template reaching past your helpers does not hit the same collision.
+
+Also verified: **ACF term fields are plain `termmeta`**, so Oxygen's `term_custom_field` reaches
+every one of them (including flattened repeater rows) with no glue code.
+
+## §penpot-dump-every-shape-type
+A Penpot audit that filters to `text` and `rectangle` **silently drops groups, boards, paths and
+images**. A whole decorative element (a rotated three-rectangle group) was missed on a first
+comparison pass because of exactly this, and only surfaced when a human pointed at it.
+
+When diffing a board, dump every type and filter afterwards. Also check the PAGE board, not
+just the component spec sheet — page-level decoration is layered over components and does not
+appear in the component's own board.
