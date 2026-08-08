@@ -683,6 +683,48 @@ script that hooks the site's search overlay client-side (only injected into the 
   `gunzip -c` back to the EXACT identity bytes (proves no double-encoding from a front proxy
   re-gzipping your already-gzipped body — it must honor your `Content-Encoding` and pass through).
 
+## Migrating an Oxygen site to another host / domain (verified against 6.1.0, 2026-08-08)
+
+The tree is **PHP-serialized post meta containing absolute URLs** — one `_oxygen_data` row can hold
+dozens (a 5-section landing page held 63). Serialized strings carry byte-length prefixes, so a
+find-and-replace in a `.sql` dump, a text editor, or raw SQL rewrites the text WITHOUT fixing the
+lengths and silently corrupts the tree. The symptom is "IO-TS decoding failed" in the builder on a
+site whose front end still renders — and by then the dump is the only copy. **Never text-replace a
+dump.** Use a serialization-aware tool, always.
+
+```bash
+# 1. general WP content (serialization-aware; --precise forces the PHP path)
+wp search-replace 'old.local' 'new.com' --all-tables --precise --skip-columns=guid
+
+# 2. Oxygen's OWN tool — post meta + preferences, then regenerates font files
+wp breakdance replace_url 'http://old.local' 'https://new.com'
+
+# 3. MANDATORY: compiled CSS lives in uploads/oxygen/css/post-<id>.css keyed to the old install.
+#    Skip this and the site renders completely unstyled while every audit stays green.
+wp breakdance clear_cache
+```
+
+⚠ **`replace_url` does NOT cover Selectors before 6.2-beta2** — its return shape is
+`{postMeta: int, preferences: bool}`. A site built with the hybrid/native-selector strategy stores
+design in `oxygen_oxy_selectors_json_string`, which that tool misses; step 1 catches the option row,
+but verify. 6.2-beta2's changelog adds "Make the Replace URL tool cover Selectors". A
+reference-stylesheet site with zero registered selectors is unaffected.
+
+**Also check, in order of how badly they bite:**
+- `wp-content/mu-plugins/` — some migration plugins skip it. An mu-plugin registering dynamic fields,
+  head tags or a redirect fails SILENTLY: bound values render as empty strings, not errors.
+  Verify with `curl -s https://new.com/ | grep -c 'breakdance_dynamic'` → must be `0`.
+- **Licences** — Oxygen (`oxygen_license_key`) and ACF Pro (`acf_pro_license`) licence per SITE.
+  A single-site tier may deactivate the origin install when the destination activates.
+- `wp rewrite flush --hard`, then confirm `show_on_front` / `page_on_front` survived.
+- 6.2-beta2 adds "don't regenerate CSS caches when the stored cache is valid and empty" — a
+  legitimately-empty cache is now SKIPPED, so "I cleared the cache and the file is still empty"
+  becomes an expected state rather than a bug. Re-read from the DB, don't trust the success message.
+
+No-shell fallback: a migration plugin (Duplicator, All-in-One WP Migration) does the same
+serialization-aware replacement through `installer.php`. Oxygen's cache regeneration is then
+Settings → Tools → Regenerate Cache in wp-admin. What you must NOT do is phpMyAdmin + a text editor.
+
 ## Admin UX standards — featured-image column + card/list view (verified 2026-07-18)
 Two small, GENERIC admin conveniences that turn image-driven CPTs (portfolios,
 catalogs, logo/brand libraries) from title-only lists into something you can scan

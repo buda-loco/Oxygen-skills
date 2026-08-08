@@ -106,6 +106,24 @@ e.g. `"44px"`); colors/keywords are plain strings; `font_weight` is a plain numb
   `aspect_ratio` = raw ratio string WITH spaces (`"16 / 9"`, `"1"`) or `"custom"` +
   `aspect_ratio_custom={"width":16,"height":9}` (plain numbers); `object_fit` = `"fill"|"contain"|"cover"|"none"|"scale-down"`
 - **effects**: `opacity`, `box_shadow[]`, `transition[]`, `cursor`
+  - ⚠ **`opacity` scales ONLY when it matches `^\d+$`.** `selectors.twig` branches: a bare run of
+    digits (int OR numeric string) is treated as a 0–100 percentage and emitted as `value / 100`;
+    anything else — decimals, `var()` — is emitted VERBATIM (the else branch is commented
+    `{# css variables #}`). **oxy_probe'd on 6.1.1, one probe per process:**
+
+    | written | emitted | |
+    |---|---|---|
+    | `100` | `opacity:1` | fully opaque |
+    | `50` / `'50'` | `opacity:0.5` | int and numeric-string both scale |
+    | `0.5` / `'0.5'` | `opacity:0.5` | decimal passes through — also correct |
+    | `'var(--fade)'` | `opacity:var(--fade)` | passes through |
+    | **`1`** | **`opacity:0.01`** | **the trap** |
+
+    So the danger is NOT the decimal form (that works). It is writing `1` meaning "fully opaque" and
+    getting **1%** — an element that vanishes while the property looks perfectly set in the panel and
+    in the compiled CSS. Fully opaque is `100`. 6.2-beta2's "normalize imported CSS opacity to the
+    builder's 0-100 percentage format" presumably folds the verbatim branch into the scaled one;
+    re-probe on 6.2 before relying on decimals continuing to pass through.
 - **position**: `position` (keyword), `top{}`/`right{}`/`bottom{}`/`left{}` offsets, `z_index` (plain
   number) — verified live (absolute-cover overlays, z-stacking from the selector)
 - **custom_css**: `custom_css.custom_css` = raw CSS string with `:selector` placeholders, emitted

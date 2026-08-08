@@ -29,6 +29,14 @@ That's it. The skill loads by itself whenever you're working on an Oxygen site �
 
 ## What's new
 
+### Latest update — 8 August 2026, checked against Oxygen 6.1.1
+
+Everything here has been re-verified on the current Oxygen release. The 6.2 beta isn't covered yet.
+
+**Moving a site to a new host or domain.** A new step-by-step guide, and it exists because this is easy to get badly wrong. Oxygen keeps your page layout in a format where an ordinary find-and-replace on a database backup quietly corrupts it — the site carries on rendering, so nothing looks wrong, and then the builder refuses to open the page. By that point the broken copy is the only copy. The guide uses Oxygen's own URL tool instead, and rebuilds the stylesheet afterwards. That last step is the one people skip, and it's why a freshly moved site sometimes appears with no styling at all.
+
+**A setting that could make things vanish, corrected.** Opacity is a percentage, so `1` means 1% — all but invisible — where most people write `1` meaning fully opaque. Fully opaque is `100`. Worth knowing because it fails silently: the value looks right in the panel and right in the stylesheet, and the element is simply gone. An earlier version of this note had the details wrong; it's now measured against 6.1.1 rather than read off the source.
+
 ### August 2026
 
 **One command now checks your whole site.** Ask Claude to verify, or run `./scripts/verify-site.sh` yourself. It opens every page and looks for the problems Oxygen doesn't warn you about: pages that won't open in the builder, images missing alt text, a page with no heading, brand styling that isn't really there. You get one answer — pass or fail — with the list.

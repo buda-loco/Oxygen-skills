@@ -129,6 +129,13 @@ elements return `false` (e.g. Advancedslider) — then read the element source p
 keys), `oxy_selector`+`oxy_save_selectors` (merge-by-name), `oxy_template_settings`
 (JSON-string location meta), `oxy_nid`/`oxy_uuid` (static registries — `wp eval-file` is
 function-scoped, `global` silently fails).
+⚠ **ONE `oxy_probe()` PER PROCESS.** Selector CSS regenerates once per process (same root cause as
+GOTCHAS §3, re-confirmed on 6.1.1), so in a loop only the FIRST probe is real: later iterations
+return the first one's CSS, or `(nothing emitted)`. Both failure modes look like findings — a loop
+probing opacity returned an identical value for eight different inputs, which reads as "the property
+is ignored" rather than "the tool is stale". Drive the loop from the SHELL, one `wp eval-file` per
+case, and pass the value in via `getenv`. Renaming the probe within one process does NOT help.
+
 **`oxy_probe($groups, $expect)`** — golden-sample an unknown property shape: registers a throwaway
 selector, compiles, reports which declarations actually reached the CSS, restores the store
 byte-for-byte. Use it before trusting ANY undocumented group ("the panel has a control" ≠ "my
@@ -284,7 +291,7 @@ small, auditable, and idempotent.
 | **Type & spacing — the DEFAULT system for text/headings/buttons/sections** (responsive modular scale + spacing-rhythm tokens; role→step map; a11y outline) | **TYPOGRAPHY.md** |
 | Element inventory (165) + source-file roots | ELEMENTS.md |
 | Exact write-shapes: tree/node, selector property groups, Global Settings, template settings, element content keys | PROPERTIES.md |
-| End-to-end recipes: pages, Gutenberg→components, WC PDP/PLP, **cart/checkout/my-account, search, 404, single-post, template-coverage checklist**, `.aux-box`, forms, menus, sliders, reference-CSS, images, footer rebuilds | RECIPES.md |
+| End-to-end recipes: pages, Gutenberg→components, WC PDP/PLP, **cart/checkout/my-account, search, 404, single-post, template-coverage checklist**, `.aux-box`, forms, menus, sliders, reference-CSS, images, footer rebuilds, **host/domain migration** | RECIPES.md |
 | Symptom→fix table + every trap that burned us (io-ts, dead WC selectors, .bde-div cascade, comment-strip, FAQ vars, Gutenberg wipe guard…) | GOTCHAS.md |
 | Worked examples (page build, native loop, component placement, dynamic data, CSS injection) | scripts/examples/ |
 | SEO: what WP/WC give free, an `seo` mu-plugin pattern (meta desc/OG/schema/archive-canonical), Oxygen H1 + empty-post_content gotchas, audit recipe | SEO.md |
@@ -320,6 +327,14 @@ features — for each, use the golden-sample workflow (build once in the real bu
   PROPERTIES §Component Properties. Reach for this before duplicating a component to change a string.
 - **Variables** (Color/Number/Unit/FontFamily/ImageURL collections, per-element overrides) — this
   skill covers only the Global Settings palette. Official docs: *Design → Variables*.
+- **An official Oxygen MCP server — NEW, UNMAPPED, and potentially supersedes chunks of this skill.**
+  6.1.0 ships nothing matching `mcp` (verified: zero files/dirs). The 6.2-beta2 changelog references
+  it twice — "stop the MCP set-global-settings tool from breaking global settings saves" and
+  "support `:where()`/`:is()` selectors in MCP" — so there is at least a global-settings tool and
+  selector/CSS handling. This skill's whole method is hand-authored PHP through `wp eval-file`;
+  a supported tool surface for global settings and selectors would replace some of the fiddliest
+  parts (double-encoded `global_settings_json_string`, hand-built property groups). **Enumerate the
+  actual tools on a 6.2 install before writing any of it down — do not transcribe the changelog.**
 - ~~**Native Interactions**~~ — **NOW SHAPED (2026-08-06, click-toggle verified in a browser):**
   `settings.interactions.interactions`, full trigger/action vocabulary in PROPERTIES §Interactions.
   Together with entrance animations (PROPERTIES §Entrance) this covers most of what used to need a
