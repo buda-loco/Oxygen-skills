@@ -947,6 +947,51 @@ Symptom: your header/footer/template CSS never loads on the front end.
 **Always use `oxy_template_settings()`.** Verified against three separate installs, all of which
 store the double-encoded form.
 
+### The other way to break it: writing a CORRECT value unslashed (verified 2026-08-14)
+`oxy_template_settings()` is not available to you when the value is already correct and you are
+just **copying it between installs** — a design export/import, a migration, a staging sync. There
+the trap is the opposite of the one above:
+
+```php
+update_post_meta($id, '_oxygen_data', wp_slash($p['tree']));              // slashed ✔
+update_post_meta($id, '_oxygen_template_settings', $p['template_settings']); // NOT slashed ✘
+```
+
+`update_post_meta()` runs every value through `wp_unslash()` before storing. The settings value is
+a JSON string whose CONTENT is escaped JSON, so unslashing strips the inner `\"` and what lands in
+the row is:
+
+```
+"{"type":"everywhere","ruleGroups":[],"priority":10}"     ← no longer valid JSON
+```
+
+Same end state as single-encoding — `json_decode` → null, the template matches nothing, its
+stylesheet is never enqueued — reached from the other direction. **`wp_slash()` is mandatory on
+BOTH meta keys**, not just `_oxygen_data`. The tree usually gets it because its breakage is loud
+(the builder refuses to open); template settings get missed because nothing complains at all.
+
+**Why this is so hard to spot.** Every signal says the write worked: the importer reports OK, the
+meta row is populated and the right length, the tree imports perfectly, the page returns 200 and
+renders its content, and there is no PHP error anywhere — a string that has stopped being valid
+JSON is not an error condition, it is a string. On a real site this ran green through five
+consecutive deploys while the front end served **no design tokens at all**: no `--c-*` custom
+properties defined anywhere, because the header template carrying them never applied.
+
+**Detect it from the outside.** Do not assert on the write; assert on the rendered HTML.
+`curl` the live page and grep for the stylesheet filenames it must link:
+
+```bash
+curl -s "$URL" | grep -q 'post-6.css'   || echo 'token stylesheet NOT loading'
+```
+
+That one grep is the only thing that caught it. Compare the raw meta across installs when it
+fires — the difference is visible at a glance:
+
+```
+local  '"{\"type\":\"everywhere\",\"ruleGroups\":[],\"priority\":10}"'   ✔
+live   '"{"type":"everywhere","ruleGroups":[],"priority":10}"'           ✘
+```
+
 ## §oxygen-data-is-nested-json — reading a tree back
 `_oxygen_data` is **not** the tree. It is `{"tree_json_string": "<json>"}` — the tree is a
 STRING inside it, so reading a node back takes two decodes:
@@ -1341,3 +1386,41 @@ comparison pass because of exactly this, and only surfaced when a human pointed 
 When diffing a board, dump every type and filter afterwards. Also check the PAGE board, not
 just the component spec sheet — page-level decoration is layered over components and does not
 appear in the component's own board.
+
+## §post-type-any-skips-oxygen-cpts — "rebuild everything with a tree" quietly rebuilds nothing (2026-08-14)
+`get_posts(['post_type' => 'any', …])` does **not** mean every post type. WP_Query resolves `any`
+to every type NOT registered with `exclude_from_search` — and that flag is exactly what Oxygen
+sets on its own types. So this loop, which reads like it covers the whole site:
+
+```php
+foreach (get_posts(['post_type'=>'any','post_status'=>'any','numberposts'=>-1,'fields'=>'ids']) as $i) {
+    if (get_post_meta($i, '_oxygen_data', true)) \Breakdance\Render\generateCacheForPost($i);
+}
+```
+
+silently skips **every `oxygen_header`, `oxygen_footer`, `oxygen_template` and `oxygen_block`** —
+i.e. the entire template layer, including whichever template carries your global stylesheet. It
+rebuilds pages and posts, prints a plausible count, and exits 0.
+
+Symptom: `post-<id>.css` for a header/footer/template **404s**, so the front end loads page CSS but
+no global CSS. Pairs viciously with §template-settings-double-encode — both end in "the template's
+stylesheet is missing", from unrelated causes, and fixing one leaves the other.
+
+List the types explicitly. The same list `export-design.php` uses:
+
+```php
+$types = ['oxygen_header','oxygen_footer','oxygen_template','oxygen_block','page','post'];
+foreach ($types as $t) {
+    foreach (get_posts(['post_type'=>$t,'post_status'=>'any','numberposts'=>-1,'fields'=>'ids']) as $i) {
+        if (get_post_meta($i, '_oxygen_data', true)) \Breakdance\Render\generateCacheForPost($i);
+    }
+}
+```
+
+⚠ `'any'` is still CORRECT when you want public, viewable content — collecting URLs to fetch, for
+instance, where `is_post_type_viewable()` filters right after (`scripts/verify-site.php` does this
+deliberately). The rule is about intent: `any` means "publicly searchable", never "all".
+
+**Related:** `wp oxygen clear_cache` only rebuilds GLOBAL stylesheets. Per-post files are generated
+on demand, so a design push that clears the cache without regenerating per-post CSS leaves pages
+pointing at stale files — or none. A deploy's design step needs both.

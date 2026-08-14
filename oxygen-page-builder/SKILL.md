@@ -389,3 +389,15 @@ features — for each, use the golden-sample workflow (build once in the real bu
 12. **Heading text stays dark on a dark hero** — set `color` on the heading's OWN class, not the
     section. §heading-color-reset. And **`oxy_button` shows a blue inner box** — neutralize
     `.btn.bde-button .bde-button__button`. §button-inner-box.
+13. **`wp_slash()` on BOTH `_oxygen_data` AND `_oxygen_template_settings`** — `update_post_meta`
+    unslashes, and the settings value is a JSON string containing escaped JSON, so writing it
+    unslashed leaves invalid JSON. The template then matches nothing and its stylesheet never
+    loads: a whole site renders with no design tokens, with no error anywhere and the meta row
+    still populated. Ran green through five deploys. §template-settings-double-encode.
+14. **`post_type => 'any'` skips every Oxygen post type** (they set `exclude_from_search`), so a
+    "rebuild all trees" loop silently misses every header/footer/template/block. List the types.
+    And `oxygen clear_cache` rebuilds GLOBAL css only — per-post files need their own regen.
+    §post-type-any-skips-oxygen-cpts.
+15. **Assert on the RENDERED page, not the write.** Both traps above report success at every
+    layer — the write returns true, the row is populated, the page 200s. `curl | grep` for the
+    stylesheet filenames the page must link; it is the only check that catches either.
