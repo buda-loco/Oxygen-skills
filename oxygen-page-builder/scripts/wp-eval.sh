@@ -22,8 +22,49 @@ APP="${OXY_SITE_PATH:-}"
 WP_ROOT="$APP/public"
 [ -d "$WP_ROOT" ] || WP_ROOT="$APP"   # fall back to APP if there's no public/ (non-Local layout)
 
-# MySQL socket: use OXY_MYSQL_SOCK, else try to autodiscover a Local socket (harmless if not present).
-SOCK="${OXY_MYSQL_SOCK:-$(ls "$HOME/Library/Application Support/Local/run/"*/mysql/mysqld.sock 2>/dev/null | head -1 || true)}"
+# MySQL socket.
+#
+# Autodiscovery used to be `ls .../run/*/mysql/mysqld.sock | head -1`, which picks the FIRST
+# socket of ALL running Local sites. With more than one site up that silently connects
+# wp-cli to the WRONG DATABASE while still using this site's WP_ROOT — the file paths are
+# right, the data is someone else's. Read-only scripts report nonsense about the wrong site
+# ("post 76 is an attachment"); a WRITE script edits the wrong customer's content. Verified
+# 2026-08-16 with three Local sites running.
+#
+# So: derive the socket from THIS site's own Local config, and only fall back to a glob when
+# exactly one socket exists (unambiguous). Otherwise refuse and ask.
+RUN="$HOME/Library/Application Support/Local/run"
+SOCK="${OXY_MYSQL_SOCK:-}"
+
+if [ -z "$SOCK" ]; then
+  # Identify THIS site's run dir from its own files. Local writes the absolute run path
+  # into .envrc (and often wp-config.php), so the id is sitting right there.
+  # Every pipeline below is `|| true`-guarded: under `set -euo pipefail` a grep that finds
+  # nothing kills the script mid-detection, before it can explain itself.
+  for probe in "$APP/.envrc" "$WP_ROOT/wp-config.php"; do
+    [ -f "$probe" ] || continue
+    ID="$(grep -oE '/Local/run/[A-Za-z0-9_-]+' "$probe" 2>/dev/null | head -1 || true)"
+    ID="${ID##*/}"
+    if [ -n "$ID" ] && [ -S "$RUN/$ID/mysql/mysqld.sock" ]; then
+      SOCK="$RUN/$ID/mysql/mysqld.sock"
+      break
+    fi
+  done
+fi
+
+if [ -z "$SOCK" ]; then
+  SOCKS="$(ls "$RUN"/*/mysql/mysqld.sock 2>/dev/null || true)"
+  COUNT="$(printf '%s' "$SOCKS" | grep -c . || true)"
+  if [ "$COUNT" = "1" ]; then
+    SOCK="$SOCKS"                       # unambiguous — one site running
+  elif [ "${COUNT:-0}" -gt 1 ]; then
+    echo "ERROR: $COUNT Local sites are running and this site's socket could not be identified." >&2
+    echo "       Guessing would run wp-cli against the WRONG DATABASE — right files, someone" >&2
+    echo "       else's data. Set it explicitly, one of:" >&2
+    printf '%s\n' "$SOCKS" | sed 's/^/         OXY_MYSQL_SOCK=/' >&2
+    exit 1
+  fi
+fi
 
 # wp-cli: OXY_WP_PHAR, else Local's bundled phar, else `wp` on PATH.
 PHAR="${OXY_WP_PHAR:-/Applications/Local.app/Contents/Resources/extraResources/bin/wp-cli/wp-cli.phar}"

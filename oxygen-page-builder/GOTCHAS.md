@@ -1424,3 +1424,42 @@ deliberately). The rule is about intent: `any` means "publicly searchable", neve
 **Related:** `wp oxygen clear_cache` only rebuilds GLOBAL stylesheets. Per-post files are generated
 on demand, so a design push that clears the cache without regenerating per-post CSS leaves pages
 pointing at stale files — or none. A deploy's design step needs both.
+
+## §wrong-local-socket — wp-cli silently talks to ANOTHER site's database (2026-08-16)
+`scripts/wp-eval.sh` used to autodiscover Local's MySQL socket with:
+
+```bash
+SOCK="$(ls "$HOME/Library/Application Support/Local/run/"*/mysql/mysqld.sock | head -1)"
+```
+
+With more than one Local site running that picks **the first socket alphabetically**, which
+is very unlikely to be yours. wp-cli then runs with the right `WP_ROOT` — your plugins, your
+`wp-config.php` — against **someone else's database**. Nothing warns you, because nothing is
+wrong from wp-cli's point of view.
+
+Caught when `validate-tree.php 76` reported:
+
+```
+Post 76: "Caña" (attachment, inherit)
+FAIL: no _oxygen_data meta on post 76
+```
+
+The page it was pointed at is a published page with a 216-node tree. The plausible reading is
+"my tree is corrupt"; the truth was "you are looking at a different site". Read-only that day —
+a **write** script would have edited the wrong client's content, and the only trace would be
+someone else's site changing for no reason.
+
+Now fixed: the socket is derived from `/Local/run/<id>` as recorded in the site's own `.envrc`
+or `wp-config.php`, a lone socket is used only when it is unambiguous, and **two or more
+running sites with no positive match is a hard error** listing the candidates.
+
+Two general points, both of which cost time here:
+
+- **A wrong-database symptom looks exactly like a data-corruption symptom.** When a query
+  returns something impossible for the object you asked about, verify WHICH database you are
+  connected to before you start diagnosing the data. `wp option get siteurl` or
+  `get_bloginfo('name')` settles it in one call.
+- Under `set -euo pipefail`, a `grep` that legitimately finds nothing **kills the script**,
+  and inside detection logic that means it dies before printing the error it was written to
+  print — exit 1, no output. Guard every probe pipeline with `|| true`. (Made this exact
+  mistake in the first cut of the fix; the refusal path was unreachable.)
